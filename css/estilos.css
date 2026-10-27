@@ -1,0 +1,136 @@
+/* Interfaz oscura alrededor de la imagen, como en los visores médicos: no compite con el
+   ultrasonido y deja ver mejor los bordes tenues. */
+:root {
+  --fondo: #0e1114;
+  --superficie: #161a1f;
+  --superficie-2: #1d2228;
+  --borde: #2a3038;
+  --texto: #e6e9ed;
+  --tenue: #8a939e;
+  --acento: #ffd479;         /* modo activo (igual que la versión de escritorio) */
+  --acento-texto: #1a1400;
+  --primario: #3d8bfd;
+  --ok: #4cd08a;
+  --aviso: #f0b429;
+  --error: #ff6b6b;
+  --l1: #00e676;
+  --l2: #ff6b6b;
+  --radio: 6px;
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--fondo); color: var(--texto); }
+[hidden] { display: none !important; }
+.num { font-variant-numeric: tabular-nums; }
+.tenue { color: var(--tenue); }
+.espacio { flex: 1; }
+
+button, select, input {
+  font: inherit;
+  color: var(--texto);
+  background: var(--superficie-2);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  height: 30px;
+}
+button { padding: 0 12px; cursor: pointer; white-space: nowrap; }
+button:hover:not(:disabled) { border-color: #46505c; background: #242a31; }
+button:disabled { opacity: .4; cursor: default; }
+button.activo { background: var(--acento); color: var(--acento-texto); border-color: var(--acento); font-weight: 600; }
+button.primario { background: var(--primario); border-color: var(--primario); color: #fff; font-weight: 600; height: 40px; padding: 0 20px; }
+button.discreto { background: transparent; border-color: transparent; color: var(--tenue); }
+button.discreto:hover { color: var(--texto); }
+input { padding: 0 8px; }
+input:disabled { opacity: .45; }
+:focus-visible { outline: 2px solid var(--primario); outline-offset: 1px; }
+
+/* ------------------------------------------------------------- login */
+.login { min-height: 100%; display: grid; place-items: center; padding: 16px; }
+.tarjeta {
+  width: min(420px, 100%); padding: 32px 28px; text-align: center;
+  background: var(--superficie); border: 1px solid var(--borde); border-radius: 12px;
+}
+.tarjeta .logo { width: 56px; height: 56px; }
+.tarjeta h1 { font-size: 20px; margin: 12px 0 6px; }
+.tarjeta .sub { color: var(--tenue); margin: 0 0 24px; line-height: 1.45; }
+.tarjeta button { display: block; margin: 8px auto 0; }
+.msg { color: var(--tenue); min-height: 1.4em; margin: 16px 0 0; line-height: 1.45; }
+
+/* --------------------------------------------------------------- app */
+.app { height: 100%; display: flex; flex-direction: column; }
+.cabecera {
+  display: flex; align-items: center; gap: 16px; padding: 8px 12px;
+  background: var(--superficie); border-bottom: 1px solid var(--borde);
+}
+.titulo { font-weight: 600; }
+.video { display: flex; align-items: center; gap: 8px; color: var(--tenue); }
+.video select { padding: 0 8px; min-width: 140px; }
+.usuario { color: var(--tenue); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guardado { font-size: 13px; display: inline-flex; align-items: center; gap: 6px; color: var(--tenue); }
+.guardado::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.guardado[data-estado="pendiente"]::before, .guardado[data-estado="guardando"]::before { background: var(--aviso); }
+.guardado[data-estado="error"] { color: var(--error); }
+.guardado[data-estado="error"]::before { background: var(--error); }
+
+.herramientas {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; padding: 8px 12px;
+  background: var(--superficie); border-bottom: 1px solid var(--borde);
+}
+.grupo { display: flex; align-items: center; gap: 6px; }
+#in-frame { width: 72px; text-align: center; }
+#in-altura { width: 70px; text-align: center; }
+#btn-ant, #btn-sig, #btn-zoom-menos, #btn-zoom-mas { width: 34px; padding: 0; }
+.zoom { width: 52px; text-align: center; color: var(--tenue); }
+
+.cuerpo { flex: 1; min-height: 0; display: flex; }
+.lienzo { position: relative; flex: 1; min-width: 0; background: #000; overflow: hidden; }
+.lienzo canvas { position: absolute; inset: 0; display: block; touch-action: none; cursor: crosshair; }
+.lienzo canvas:focus { outline: none; }
+.cargando {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  padding: 6px 12px; border-radius: 999px; background: rgba(22, 26, 31, .9);
+  border: 1px solid var(--borde); color: var(--tenue); font-size: 13px; pointer-events: none;
+}
+
+.panel {
+  width: 240px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 14px 12px;
+  background: var(--superficie); border-left: 1px solid var(--borde); overflow: auto;
+}
+.panel h2 { font-size: 13px; font-weight: 600; margin: 0; color: var(--tenue); text-transform: uppercase; letter-spacing: .04em; }
+.progreso { display: flex; flex-direction: column; gap: 6px; }
+.progreso .num { font-size: 18px; font-weight: 600; }
+.pista { height: 4px; border-radius: 2px; background: var(--superficie-2); overflow: hidden; }
+.barra { height: 100%; width: 0; background: var(--ok); transition: width .2s; }
+.lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.lista button {
+  width: 100%; display: flex; align-items: center; gap: 8px; height: 32px;
+  background: transparent; border-color: transparent; text-align: left;
+}
+.lista .actual button { background: var(--superficie-2); border-color: var(--borde); }
+.lista .num { flex: 1; }
+.lista .dato { color: var(--tenue); font-variant-numeric: tabular-nums; }
+.lista .pendiente { width: 7px; height: 7px; border-radius: 50%; background: var(--aviso); }
+.lista .vacio { color: var(--tenue); line-height: 1.45; padding: 4px 2px; }
+.ayuda { margin-top: auto; color: var(--tenue); font-size: 13px; }
+.ayuda summary { cursor: pointer; padding: 4px 0; }
+.ayuda dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 8px 0 0; }
+.ayuda dt { color: var(--texto); }
+.ayuda dd { margin: 0; }
+
+.estado {
+  padding: 6px 12px; font-size: 13px; color: var(--tenue); font-variant-numeric: tabular-nums;
+  background: var(--superficie); border-top: 1px solid var(--borde);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+@media (max-width: 760px) {
+  .titulo, .usuario { display: none; }
+  .cabecera { gap: 10px; }
+  .cuerpo { flex-direction: column; }
+  .panel { width: auto; max-height: 30vh; border-left: 0; border-top: 1px solid var(--borde); }
+  .ayuda { display: none; }
+}

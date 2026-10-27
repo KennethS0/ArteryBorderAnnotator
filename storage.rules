@@ -1,0 +1,16 @@
+rules_version = '2';
+
+// Reglas de Cloud Storage: los frames solo los pueden ver las personas autorizadas
+// (las que tienen su correo en la colección "anotadores" de Firestore).
+// Nadie puede subir ni borrar desde la web; los frames los sube scripts/preparar_frames.py
+// con credenciales de administrador, que no pasan por estas reglas.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /frames/{video}/{archivo} {
+      allow read: if request.auth != null
+        && request.auth.token.email_verified == true
+        && firestore.exists(/databases/(default)/documents/anotadores/$(request.auth.token.email));
+      allow write: if false;
+    }
+  }
+}

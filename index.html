@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anotador de arteria braquial</title>
+  <meta name="robots" content="noindex">
+  <link rel="stylesheet" href="css/estilos.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23161a1f'/%3E%3Cpath d='M3 11c8-3 18-3 26 0' stroke='%2300e676' stroke-width='2.5' fill='none'/%3E%3Cpath d='M3 21c8 3 18 3 26 0' stroke='%23ff6b6b' stroke-width='2.5' fill='none'/%3E%3C/svg%3E">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+
+  <!-- ===================================================== inicio de sesión -->
+  <main id="pantalla-login" class="login">
+    <div class="tarjeta">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M3 11c8-3 18-3 26 0" stroke="var(--l1)" stroke-width="2.5" fill="none"/>
+        <path d="M3 21c8 3 18 3 26 0" stroke="var(--l2)" stroke-width="2.5" fill="none"/>
+      </svg>
+      <h1>Anotador de arteria braquial</h1>
+      <p class="sub">Traza las paredes de la arteria frame por frame. Tus anotaciones se guardan automáticamente.</p>
+      <button id="btn-login" class="primario" type="button">Iniciar sesión con Google</button>
+      <button id="btn-salir-login" type="button" hidden>Usar otra cuenta</button>
+      <p id="login-msg" class="msg" role="status"></p>
+    </div>
+  </main>
+
+  <!-- ============================================================= app -->
+  <div id="pantalla-app" class="app" hidden>
+    <header class="cabecera">
+      <span class="titulo">Anotador de arteria braquial</span>
+      <label class="video">Video
+        <select id="sel-video" aria-label="Video"></select>
+      </label>
+      <span class="espacio"></span>
+      <span id="lbl-guardado" class="guardado" data-estado="ok" role="status">Guardado</span>
+      <span id="usuario-nombre" class="usuario"></span>
+      <button id="btn-salir" type="button" class="discreto">Salir</button>
+    </header>
+
+    <nav class="herramientas" aria-label="Herramientas">
+      <div class="grupo">
+        <button id="btn-ant" type="button" title="Frame anterior (←)" aria-label="Frame anterior">◀</button>
+        <input id="in-frame" type="text" inputmode="numeric" class="num" aria-label="Número de frame" title="Escribe un número y pulsa Enter">
+        <span id="lbl-total" class="tenue"></span>
+        <button id="btn-sig" type="button" title="Frame siguiente (→)" aria-label="Frame siguiente">▶</button>
+      </div>
+      <div class="grupo">
+        <button id="btn-zoom-menos" type="button" title="Alejar (−)" aria-label="Alejar">−</button>
+        <span id="lbl-zoom" class="num zoom">100%</span>
+        <button id="btn-zoom-mas" type="button" title="Acercar (+)" aria-label="Acercar">+</button>
+        <button id="btn-ajustar" type="button" title="Ajustar a la ventana (0)">Ajustar</button>
+      </div>
+      <div class="grupo">
+        <label for="in-altura" class="tenue">Altura</label>
+        <input id="in-altura" type="text" inputmode="decimal" class="num" disabled
+               title="Altura de la línea seleccionada (px). Enter para aplicar. ↑/↓ para mover 1 px, Shift para 0.1 px">
+        <span class="tenue">px</span>
+      </div>
+      <span class="espacio"></span>
+      <div class="grupo">
+        <button id="btn-nueva" type="button" aria-pressed="false" title="Clic: línea de borde a borde · clic y arrastrar: solo ese tramo">Nueva línea</button>
+        <button id="btn-eliminar" type="button" aria-pressed="false" title="Clic en un ancla la quita · clic en la línea la borra">Eliminar</button>
+        <button id="btn-guardar" type="button" title="Guardar ahora (Ctrl+S). También se guarda solo.">Guardar</button>
+      </div>
+    </nav>
+
+    <div class="cuerpo">
+      <div id="lienzo-contenedor" class="lienzo">
+        <canvas id="lienzo" tabindex="0" aria-label="Frame del video"></canvas>
+        <div id="cargando" class="cargando" hidden>Cargando frame…</div>
+      </div>
+
+      <aside class="panel">
+        <h2>Mis frames anotados</h2>
+        <div class="progreso">
+          <span id="lbl-progreso" class="num">0 / 25</span>
+          <div class="pista"><div id="barra-progreso" class="barra"></div></div>
+        </div>
+        <ul id="lista-frames" class="lista"></ul>
+        <details class="ayuda">
+          <summary>Atajos y controles</summary>
+          <dl>
+            <dt>Arrastrar ancla</dt><dd>curvatura</dd>
+            <dt>Arrastrar línea</dt><dd>altura</dd>
+            <dt>Doble clic en línea</dt><dd>agregar ancla</dd>
+            <dt>↑ / ↓</dt><dd>altura ±1 px (Shift ±0.1)</dd>
+            <dt>Supr</dt><dd>borrar línea seleccionada</dd>
+            <dt>Ctrl+Z</dt><dd>deshacer</dd>
+            <dt>← / →</dt><dd>frame anterior / siguiente</dd>
+            <dt>Rueda</dt><dd>zoom</dd>
+            <dt>Clic derecho + arrastrar</dt><dd>mover la vista</dd>
+            <dt>Esc</dt><dd>cancelar</dd>
+          </dl>
+        </details>
+      </aside>
+    </div>
+
+    <footer id="estado" class="estado" role="status"></footer>
+  </div>
+</body>
+</html>

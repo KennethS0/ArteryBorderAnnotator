@@ -1,0 +1,12 @@
+# Credenciales de administrador de Firebase: NUNCA al repositorio
+clave-servicio.json
+*firebase-adminsdk*.json
+
+# Datos (se generan con los scripts; los frames viven en Firebase Storage, no aquí)
+frames_web/
+ground_truth_web/
+*.avi
+*.mp4
+
+__pycache__/
+.DS_Store
