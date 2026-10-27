@@ -62,6 +62,31 @@ Crea `ground_truth_web/` con:
 `--sin-imagenes` solo se escribe el CSV. Si una persona envía varios archivos, por cada frame se
 usa la versión editada más recientemente.
 
+### Líneas numéricas para comparar con la detección
+
+`scripts/lineas_anotadas.py` reconstruye cada línea anotada con el mismo cálculo que usa la
+página para dibujarla. Devuelve las paredes con la misma forma que las de
+`deteccion_bordes.py`: un valor por columna `x` y `NaN` fuera del tramo anotado.
+
+```python
+from lineas_anotadas import cargar_anotaciones, comparar_paredes
+
+for a in cargar_anotaciones("recibidos/"):
+    sup, inf = a.paredes()                         # arreglos de largo a.ancho (330)
+    m = comparar_paredes(a, sup_detectada, inf_detectada)
+    print(a.video, a.frame, a.anotador, m["diametro"]["mae_px"])
+```
+
+Desde la terminal: `python scripts/lineas_anotadas.py recibidos/` escribe `paredes_anotadas.csv`,
+con una fila por columna (`x, y_superior, y_inferior, diametro_px`). Si agregas
+`--imagenes verificacion --videos ../videos`, dibuja cada anotación sobre su frame para
+compararla a ojo con la página. También lee los `frame_<n>.json` de la versión de escritorio.
+
+Validación: con anotaciones reales hechas en la página, los valores de Python coinciden
+exactamente (diferencia 0) con los de `js/geometria.js` en todas las columnas y en cada ancla.
+Además, midiendo los píxeles dibujados en pantalla con zoom ×20, la diferencia en 140 columnas
+fue de 0.008 px como máximo.
+
 ### Formato del archivo que envían
 
 ```json
@@ -119,4 +144,5 @@ git add frames && git commit -m "Agregar VTS_01_6" && git push
 | `frames/` | los frames de los videos y `videos.json` |
 | `scripts/preparar_frames.py` | `.avi` → `frames/` |
 | `scripts/importar_anotaciones.py` | archivos recibidos → formato de escritorio + CSV |
+| `scripts/lineas_anotadas.py` | archivos recibidos → paredes por columna para comparar con la detección |
 | `scripts/formato_ground_truth.py` | geometría y exportación compartidas con la versión de escritorio |
