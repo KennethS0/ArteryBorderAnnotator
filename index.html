@@ -10,33 +10,17 @@
   <script type="module" src="js/main.js"></script>
 </head>
 <body>
-
-  <!-- ===================================================== inicio de sesión -->
-  <main id="pantalla-login" class="login">
-    <div class="tarjeta">
-      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
-        <path d="M3 11c8-3 18-3 26 0" stroke="var(--l1)" stroke-width="2.5" fill="none"/>
-        <path d="M3 21c8 3 18 3 26 0" stroke="var(--l2)" stroke-width="2.5" fill="none"/>
-      </svg>
-      <h1>Anotador de arteria braquial</h1>
-      <p class="sub">Traza las paredes de la arteria frame por frame. Tus anotaciones se guardan automáticamente.</p>
-      <button id="btn-login" class="primario" type="button">Iniciar sesión con Google</button>
-      <button id="btn-salir-login" type="button" hidden>Usar otra cuenta</button>
-      <p id="login-msg" class="msg" role="status"></p>
-    </div>
-  </main>
-
-  <!-- ============================================================= app -->
-  <div id="pantalla-app" class="app" hidden>
+  <div id="pantalla-app" class="app">
     <header class="cabecera">
       <span class="titulo">Anotador de arteria braquial</span>
-      <label class="video">Video
+      <label class="video"><span class="etq">Video</span>
         <select id="sel-video" aria-label="Video"></select>
       </label>
       <span class="espacio"></span>
-      <span id="lbl-guardado" class="guardado" data-estado="ok" role="status">Guardado</span>
-      <span id="usuario-nombre" class="usuario"></span>
-      <button id="btn-salir" type="button" class="discreto">Salir</button>
+      <span id="lbl-guardado" class="guardado" data-estado="ok" role="status">Sin anotaciones</span>
+      <button id="btn-cargar" type="button" class="discreto" title="Seguir trabajando con un archivo descargado antes">Cargar archivo</button>
+      <button id="btn-descargar" type="button" class="primario" title="Descargar todas tus anotaciones en un archivo para enviarlo (Ctrl+S)">Descargar anotaciones</button>
+      <input id="in-archivo" type="file" accept=".json,application/json" hidden>
     </header>
 
     <nav class="herramientas" aria-label="Herramientas">
@@ -62,7 +46,6 @@
       <div class="grupo">
         <button id="btn-nueva" type="button" aria-pressed="false" title="Clic: línea de borde a borde · clic y arrastrar: solo ese tramo">Nueva línea</button>
         <button id="btn-eliminar" type="button" aria-pressed="false" title="Clic en un ancla la quita · clic en la línea la borra">Eliminar</button>
-        <button id="btn-guardar" type="button" title="Guardar ahora (Ctrl+S). También se guarda solo.">Guardar</button>
       </div>
     </nav>
 
@@ -73,12 +56,16 @@
       </div>
 
       <aside class="panel">
-        <h2>Mis frames anotados</h2>
+        <h2>Frames anotados en este video</h2>
         <div class="progreso">
           <span id="lbl-progreso" class="num">0 / 25</span>
           <div class="pista"><div id="barra-progreso" class="barra"></div></div>
         </div>
         <ul id="lista-frames" class="lista"></ul>
+        <p class="nota">
+          Tus anotaciones se guardan en este navegador. Al terminar, pulsa
+          <b>Descargar anotaciones</b> y envía el archivo al equipo del proyecto.
+        </p>
         <details class="ayuda">
           <summary>Atajos y controles</summary>
           <dl>
@@ -91,6 +78,7 @@
             <dt>← / →</dt><dd>frame anterior / siguiente</dd>
             <dt>Rueda</dt><dd>zoom</dd>
             <dt>Clic derecho + arrastrar</dt><dd>mover la vista</dd>
+            <dt>Ctrl+S</dt><dd>descargar anotaciones</dd>
             <dt>Esc</dt><dd>cancelar</dd>
           </dl>
         </details>
@@ -99,5 +87,19 @@
 
     <footer id="estado" class="estado" role="status"></footer>
   </div>
+
+  <dialog id="dlg-descargar" class="dialogo" aria-labelledby="dlg-titulo">
+    <form id="dlg-form" method="dialog">
+      <h2 id="dlg-titulo">Descargar anotaciones</h2>
+      <p id="dlg-resumen" class="tenue"></p>
+      <label for="dlg-nombre">Tu nombre</label>
+      <input id="dlg-nombre" type="text" autocomplete="name" required placeholder="Nombre y apellido">
+      <p class="tenue pequeno">Va dentro del archivo, para saber quién hizo cada anotación.</p>
+      <div class="acciones">
+        <button id="dlg-cancelar" type="button">Cancelar</button>
+        <button id="dlg-ok" type="submit" class="primario">Descargar</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>

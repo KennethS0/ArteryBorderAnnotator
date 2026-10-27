@@ -1,7 +1,7 @@
 // app.js — Interfaz del anotador (equivalente web de ground_truth/anotador_frames_v2.py).
 //
-// No sabe nada de Firebase: recibe un `backend` con login, lista de videos, URLs de los
-// bloques de frames y lectura/escritura de anotaciones (ver firebase-backend.js).
+// Recibe un `backend` con la lista de videos, las URLs de los bloques de frames y la
+// lectura/escritura/exportación de anotaciones (ver almacen-local.js).
 
 import * as G from "./geometria.js";
 import { META_FRAMES_POR_VIDEO, AUTOGUARDADO_S } from "./config.js";
@@ -52,34 +52,9 @@ export function iniciarApp(backend) {
   const ctx = lienzo.getContext("2d");
   const cont = $("lienzo-contenedor");
 
-  // ------------------------------------------------------------ autenticación
-  $("btn-login").onclick = async () => {
-    $("login-msg").textContent = "";
-    try { await backend.login(); } catch (e) {
-      if (e?.code !== "auth/popup-closed-by-user" && e?.code !== "auth/cancelled-popup-request") {
-        $("login-msg").textContent = `No se pudo iniciar sesión: ${e.message || e}`;
-      }
-    }
-  };
-  $("btn-salir").onclick = async () => { await guardarTodo(); backend.logout(); };
-  $("btn-salir-login").onclick = () => backend.logout();
-
-  backend.onAuth(async (u) => {
-    st.usuario = u;
-    if (!u) return mostrarPantalla("login");
-    $("login-msg").textContent = "Verificando acceso…";
-    if (!(await backend.estaAutorizado())) {
-      mostrarPantalla("login");
-      $("login-msg").innerHTML = "";
-      $("login-msg").append(
-        "La cuenta ", Object.assign(document.createElement("b"), { textContent: u.email }),
-        " no está autorizada. Pídele al responsable del proyecto que la agregue.");
-      $("btn-salir-login").hidden = false;
-      $("btn-login").hidden = true;
-      return;
-    }
-    $("usuario-nombre").textContent = u.nombre;
-    mostrarPantalla("app");
+  // ------------------------------------------------------------------ inicio
+  (async () => {
+    requestAnimationFrame(redimensionar);
     try {
       st.videos = await backend.listarVideos();
     } catch (e) {
@@ -88,21 +63,65 @@ export function iniciarApp(backend) {
     const sel = $("sel-video");
     sel.innerHTML = "";
     for (const v of st.videos) sel.add(new Option(v.nombre || v.id, v.id));
-    if (!st.videos.length) return estado("Todavía no hay videos. Súbelos con scripts/preparar_frames.py.");
+    if (!st.videos.length) return estado("Todavía no hay videos. Genera los frames con scripts/preparar_frames.py.");
     const h = leerHash();
     const v = st.videos.find((x) => x.id === h.video) || st.videos[0];
     sel.value = v.id;
     await abrirVideo(v, h.video === v.id ? h.frame : null);
+  })();
+
+  // ------------------------------------------------- descargar / cargar archivo
+  const dlg = $("dlg-descargar");
+  function abrirDescarga() {
+    guardarTodo();
+    const { frames, videos } = backend.resumen();
+    $("dlg-resumen").textContent = frames
+      ? `Se descargarán ${frames} frame${frames === 1 ? "" : "s"} anotado${frames === 1 ? "" : "s"} `
+        + `en ${videos} video${videos === 1 ? "" : "s"}.`
+      : "Todavía no has anotado ningún frame.";
+    $("dlg-nombre").value = backend.nombre;
+    $("dlg-ok").disabled = !frames;
+    dlg.showModal();
+    $("dlg-nombre").focus();
+  }
+  $("btn-descargar").onclick = abrirDescarga;
+  $("dlg-cancelar").onclick = () => dlg.close();
+  $("dlg-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const nombre = $("dlg-nombre").value.trim();
+    if (!nombre) { $("dlg-nombre").focus(); return; }
+    backend.nombre = nombre;
+    const datos = backend.exportar(nombre);
+    const slug = nombre.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "").toLowerCase() || "anotador";
+    const fecha = new Date().toISOString().slice(0, 16).replace("T", "_").replace(":", "-");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(datos, null, 1)], { type: "application/json" }));
+    a.download = `anotaciones_${slug}_${fecha}.json`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    backend.marcarDescargado();
+    dlg.close();
+    actualizarIndicador();
+    estado(`Descargado ${a.download}. Envíalo al equipo del proyecto.`);
   });
 
-  function mostrarPantalla(cual) {
-    $("pantalla-login").hidden = cual !== "login";
-    $("pantalla-app").hidden = cual !== "app";
-    $("btn-login").hidden = false;
-    $("btn-salir-login").hidden = true;
-    if (cual === "login") $("login-msg").textContent = "";
-    if (cual === "app") requestAnimationFrame(redimensionar);
-  }
+  $("btn-cargar").onclick = () => $("in-archivo").click();
+  $("in-archivo").addEventListener("change", async (e) => {
+    const archivo = e.target.files[0];
+    e.target.value = "";
+    if (!archivo) return;
+    try {
+      await guardarTodo();
+      const n = backend.importar(JSON.parse(await archivo.text()));
+      if (st.video) await abrirVideo(st.video, st.frame);
+      estado(`Cargados ${n} frames de ${archivo.name}.`);
+    } catch (err) {
+      estado(`No se pudo cargar ${archivo.name}: ${err.message || err}`);
+    }
+  });
 
   function leerHash() {
     const p = new URLSearchParams(location.hash.slice(1));
@@ -281,25 +300,29 @@ export function iniciarApp(backend) {
     await Promise.all([...st.sinGuardar].map(guardarFrame));
   }
 
+  // El respaldo en el navegador es inmediato; lo que importa es si falta descargar el archivo.
   function actualizarIndicador() {
     const el = $("lbl-guardado");
+    const btn = $("btn-descargar");
     if (st.errorGuardado && st.sinGuardar.size) {
-      el.textContent = "Error al guardar · reintentando";
+      el.textContent = "No se pudo guardar en el navegador · descarga tus anotaciones";
       el.dataset.estado = "error";
       el.title = st.errorGuardado;
-    } else if (st.guardando.size) {
-      el.textContent = "Guardando…"; el.dataset.estado = "guardando"; el.title = "";
-    } else if (st.sinGuardar.size) {
-      el.textContent = "Cambios sin guardar"; el.dataset.estado = "pendiente"; el.title = "";
+    } else if (backend.pendienteDescarga() || st.sinGuardar.size) {
+      el.textContent = "Cambios sin descargar";
+      el.dataset.estado = "pendiente";
+      el.title = "Tus anotaciones están guardadas en este navegador. Al terminar, descárgalas y envía el archivo.";
     } else {
-      el.textContent = "Guardado"; el.dataset.estado = "ok"; el.title = "";
+      const { frames } = backend.resumen();
+      el.textContent = frames ? "Todo descargado" : "Sin anotaciones";
+      el.dataset.estado = "ok";
+      el.title = "";
     }
+    btn.classList.toggle("pendiente", el.dataset.estado !== "ok");
   }
 
-  $("btn-guardar").onclick = () => guardarTodo();
-  window.addEventListener("beforeunload", (e) => {
-    if (st.sinGuardar.size || st.guardando.size) { guardarTodo(); e.preventDefault(); e.returnValue = ""; }
-  });
+  // Al cerrar o recargar, lo pendiente se escribe en el navegador (es instantáneo).
+  window.addEventListener("pagehide", () => { guardarTodo(); });
 
   // ------------------------------------------------------- panel de frames
   function renderLista() {
@@ -674,10 +697,10 @@ export function iniciarApp(backend) {
 
   // ---------------------------------------------------------------- teclado
   document.addEventListener("keydown", (e) => {
-    if ($("pantalla-app").hidden) return;
+    if (dlg.open) return;
     const enCampo = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName);
     const ctrl = e.ctrlKey || e.metaKey;
-    if (ctrl && e.key.toLowerCase() === "s") { e.preventDefault(); guardarTodo(); return; }
+    if (ctrl && e.key.toLowerCase() === "s") { e.preventDefault(); abrirDescarga(); return; }
     if (enCampo) return;
     if (ctrl && e.key.toLowerCase() === "z") { e.preventDefault(); return deshacer(); }
     if (ctrl) return;

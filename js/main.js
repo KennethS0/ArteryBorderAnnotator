@@ -1,12 +1,5 @@
-// main.js — Punto de entrada: conecta la interfaz con Firebase.
-import { firebaseConfig } from "./config.js";
+// main.js — Punto de entrada.
 import { iniciarApp } from "./app.js";
+import { crearAlmacenLocal } from "./almacen-local.js";
 
-if (firebaseConfig.apiKey === "PEGA_AQUI") {
-  document.getElementById("btn-login").disabled = true;
-  document.getElementById("login-msg").textContent =
-    "Falta configurar Firebase: pega el firebaseConfig de tu proyecto en js/config.js (ver README).";
-} else {
-  const { crearBackendFirebase } = await import("./firebase-backend.js");
-  iniciarApp(crearBackendFirebase(firebaseConfig));
-}
+iniciarApp(crearAlmacenLocal());
