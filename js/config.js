@@ -5,12 +5,12 @@
 //    Estos valores NO son secretos: identifican al proyecto. Lo que protege los datos son las
 //    reglas de seguridad (firestore.rules y storage.rules) y la lista de anotadores autorizados.
 export const firebaseConfig = {
-  apiKey: "PEGA_AQUI",
-  authDomain: "TU-PROYECTO.firebaseapp.com",
-  projectId: "TU-PROYECTO",
-  storageBucket: "TU-PROYECTO.firebasestorage.app",
-  messagingSenderId: "000000000000",
-  appId: "1:000000000000:web:0000000000000000",
+  apiKey: "AIzaSyD56sfy5iQooZOAjHyQ0e-o6R3yoAv4Zsk",
+  authDomain: "arteryborderannotator.firebaseapp.com",
+  projectId: "arteryborderannotator",
+  storageBucket: "arteryborderannotator.firebasestorage.app",
+  messagingSenderId: "6246735352",
+  appId: "1:6246735352:web:cb32ba09c6674120d7ca0d",
 };
 
 // Cuántos frames se espera que anote cada persona por video (solo para mostrar el progreso).
