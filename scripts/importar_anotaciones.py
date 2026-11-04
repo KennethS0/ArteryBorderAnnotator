@@ -4,15 +4,18 @@ importar_anotaciones.py — Convierte los archivos que envían los anotadores
 (anotaciones_<nombre>_<fecha>.json, descargados de la web) al mismo formato que exporta la
 herramienta de escritorio (anotador_frames_v2.py).
 
-Cada frame viene anotado con 2 líneas o con pares de puntos verticales (mínimo 10; los frames
-con menos se omiten con un aviso). Por cada anotación (video, frame, persona):
+Cada frame puede venir con 2 líneas, con pares de puntos verticales (mínimo 10) o con ambos.
+Lo incompleto (menos de 10 pares, o líneas que no son 2) se omite con un aviso.
+Por cada anotación (video, frame, persona):
     <salida>/<video>_ground_truth/<persona>/<frame>/
-        frame_<n>.json            formato "lineas_v2" (líneas) o "pares_v1" (puntos) + quién anotó
+        frame_<n>.json            líneas: formato "lineas_v2" + quién anotó
+        frame_<n>_pares.json      pares de puntos: formato "pares_v1" + quién anotó
+        frame_<n>_pares_anotado.png
         frame_<n>_original.png    el frame leído del .avi original con OpenCV
         frame_<n>_anotado.png     el frame con las curvas dibujadas
 
 Y un resumen con una fila por anotación:
-    <salida>/resumen_anotaciones.csv   (video, frame, persona, diámetro medio/mediana/mín/máx…)
+    <salida>/resumen_anotaciones.csv   una fila por (video, frame, persona, tipo): diámetro medio…
 Ese CSV sirve para comparar con arteria_braquial.py y entre anotadores.
 
 Si llegan varios archivos de la misma persona, por cada frame se queda la versión editada más
@@ -106,13 +109,28 @@ def leer_frames(ruta, indices):
     return frames
 
 
+def _estadisticas(d):
+    d = np.asarray(d, float)
+    if not len(d):
+        return {k: "" for k in ("diametro_medio_px", "diametro_mediana_px", "diametro_min_px",
+                                "diametro_max_px", "diametro_desv_px")}
+    return {"diametro_medio_px": round(float(np.mean(d)), 3), "diametro_mediana_px": round(float(np.median(d)), 3),
+            "diametro_min_px": round(float(np.min(d)), 3), "diametro_max_px": round(float(np.max(d)), 3),
+            "diametro_desv_px": round(float(np.std(d)), 3)}
+
+
 def procesar(anotaciones, metas, videos_dir, salida, con_imagenes, min_pares=MIN_PARES):
     salida = Path(salida)
     for k in sorted(anotaciones):
-        n = len(anotaciones[k]["pares"])
-        if n and n < min_pares:
-            print(f"[aviso] {k[0]} frame {k[1]} ({anotaciones[k]['anotador']}): {n} pares de puntos "
-                  f"(mínimo {min_pares}); se omite.")
+        a = anotaciones[k]
+        quien = f"{k[0]} frame {k[1]} ({a['anotador']})"
+        if a["pares"] and len(a["pares"]) < min_pares:
+            print(f"[aviso] {quien}: {len(a['pares'])} pares de puntos (mínimo {min_pares}); se omiten los pares.")
+            a["pares"] = []
+        if a["lineas"] and len(a["lineas"]) != 2:
+            print(f"[aviso] {quien}: {len(a['lineas'])} línea(s) (se necesitan 2); se omiten las líneas.")
+            a["lineas"] = []
+        if not a["pares"] and not a["lineas"]:
             del anotaciones[k]
     salida.mkdir(parents=True, exist_ok=True)
     filas = []
@@ -131,45 +149,31 @@ def procesar(anotaciones, metas, videos_dir, salida, con_imagenes, min_pares=MIN
             a = anotaciones[(vid, frame, persona)]
             lineas = a["lineas"]
             pares = a["pares"]
-            ordenadas = [lineas[i] for i in orden_vertical(lineas)] if lineas else []
-            pares_lineas = distancias_consecutivas(ordenadas) if ordenadas else []
-            fila = {"video": vid, "frame": frame, "tiempo_s": round(frame / fps, 4) if fps else "",
-                    "persona": persona, "anotador": a["anotador"], "tipo": "pares" if pares else "lineas",
-                    "n_lineas": len(lineas), "n_pares": len(pares),
-                    "diametro_medio_px": "", "diametro_mediana_px": "", "diametro_min_px": "",
-                    "diametro_max_px": "", "diametro_desv_px": "", "x_inicio": "", "x_fin": "",
+            base = {"video": vid, "frame": frame, "tiempo_s": round(frame / fps, 4) if fps else "",
+                    "persona": persona, "anotador": a["anotador"], "n_lineas": len(lineas), "n_pares": len(pares),
                     "actualizado": a["actualizado"] or "", "archivo": a["archivo"]}
-            if len(a["pares"]):
-                d = np.array([yi - ys for _, ys, yi in a["pares"]])
-                fila.update({"diametro_medio_px": round(float(np.mean(d)), 3),
-                             "diametro_mediana_px": round(float(np.median(d)), 3),
-                             "diametro_min_px": round(float(np.min(d)), 3),
-                             "diametro_max_px": round(float(np.max(d)), 3),
-                             "diametro_desv_px": round(float(np.std(d)), 3),
-                             "x_inicio": round(a["pares"][0][0], 2), "x_fin": round(a["pares"][-1][0], 2)})
-            elif len(lineas) == 2 and pares_lineas:
-                _, _, cols, d = pares_lineas[0]
-                fila.update({"diametro_medio_px": round(float(np.mean(d)), 3),
-                             "diametro_mediana_px": round(float(np.median(d)), 3),
-                             "diametro_min_px": round(float(np.min(d)), 3),
-                             "diametro_max_px": round(float(np.max(d)), 3),
-                             "diametro_desv_px": round(float(np.std(d)), 3),
-                             "x_inicio": int(cols[0]), "x_fin": int(cols[-1])})
-            filas.append(fila)
             extra = {"anotador": a["anotador"], "actualizado_web": a["actualizado"],
                      "archivo_origen": a["archivo"], "origen": "web"}
-            if frame in frames and pares:
-                exportar_frame_pares(frames[frame], pares, salida / f"{vid}_ground_truth" / persona / str(frame),
-                                     video_nombre=f"{vid}.avi", ruta_video=ruta.resolve(), frame=frame, fps=fps,
-                                     extra=extra)
-                escritos += 1
-            elif frame in frames and lineas:
-                exportar_frame(frames[frame], lineas, salida / f"{vid}_ground_truth" / persona / str(frame),
-                               video_nombre=f"{vid}.avi", ruta_video=ruta.resolve(), frame=frame, fps=fps,
-                               extra={"anotador": a["anotador"], "actualizado_web": a["actualizado"],
-                                      "archivo_origen": a["archivo"], "origen": "web"})
-                escritos += 1
-        print(f"{vid}: {len(claves)} anotaciones" + (f", {escritos} exportadas con imágenes" if con_imagenes else ""))
+            carpeta = salida / f"{vid}_ground_truth" / persona / str(frame)
+            if lineas:
+                ordenadas = [lineas[i] for i in orden_vertical(lineas)]
+                dist = distancias_consecutivas(ordenadas)
+                cols, d = (dist[0][2], dist[0][3]) if dist else ([], [])
+                filas.append({**base, "tipo": "lineas", **_estadisticas(d),
+                              "x_inicio": int(cols[0]) if len(cols) else "", "x_fin": int(cols[-1]) if len(cols) else ""})
+                if frame in frames:
+                    exportar_frame(frames[frame], lineas, carpeta, video_nombre=f"{vid}.avi",
+                                   ruta_video=ruta.resolve(), frame=frame, fps=fps, extra=extra)
+                    escritos += 1
+            if pares:
+                d = np.array([yi - ys for _, ys, yi in pares])
+                filas.append({**base, "tipo": "pares", **_estadisticas(d),
+                              "x_inicio": round(pares[0][0], 2), "x_fin": round(pares[-1][0], 2)})
+                if frame in frames:
+                    exportar_frame_pares(frames[frame], pares, carpeta, video_nombre=f"{vid}.avi",
+                                         ruta_video=ruta.resolve(), frame=frame, fps=fps, extra=extra)
+                    escritos += 1
+        print(f"{vid}: {len(claves)} anotaciones" + (f", {escritos} archivos de anotación exportados con imágenes" if con_imagenes else ""))
 
     campos = ["video", "frame", "tiempo_s", "persona", "anotador", "tipo", "n_lineas", "n_pares", "diametro_medio_px",
               "diametro_mediana_px", "diametro_min_px", "diametro_max_px", "diametro_desv_px",

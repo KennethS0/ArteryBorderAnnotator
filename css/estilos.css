@@ -91,6 +91,14 @@ input:disabled { opacity: .45; }
   background: var(--superficie); border-bottom: 1px solid var(--borde);
 }
 .grupo { display: flex; align-items: center; gap: 6px; }
+.grupo.inactivo { opacity: .35; pointer-events: none; }
+
+/* Selector de vista Líneas / Puntos */
+.segmentado { display: inline-flex; border: 1px solid var(--borde); border-radius: var(--radio); overflow: hidden; }
+.segmentado button { border: 0; border-radius: 0; background: var(--superficie-2); color: var(--tenue); padding: 0 14px; }
+.segmentado button + button { border-left: 1px solid var(--borde); }
+.segmentado button.activo { background: #2b3440; color: var(--texto); font-weight: 600; }
+.segmentado button:hover:not(.activo) { color: var(--texto); }
 #in-frame { width: 72px; text-align: center; }
 #in-altura { width: 70px; text-align: center; }
 #btn-ant, #btn-sig, #btn-zoom-menos, #btn-zoom-mas { width: 34px; padding: 0; }
@@ -124,7 +132,7 @@ input:disabled { opacity: .45; }
 .lista .num { flex: 1; }
 .lista .dato { color: var(--tenue); font-variant-numeric: tabular-nums; }
 .lista .pendiente { width: 7px; height: 7px; border-radius: 50%; background: var(--aviso); }
-.lista .incompleto .dato { color: var(--aviso); }
+.lista .dato .falta { color: var(--aviso); }
 .lista .vacio { color: var(--tenue); line-height: 1.45; padding: 4px 2px; }
 .nota {
   margin: auto 0 0; padding: 10px; font-size: 13px; line-height: 1.45; color: var(--tenue);

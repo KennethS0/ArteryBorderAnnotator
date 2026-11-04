@@ -36,13 +36,17 @@
         <button id="btn-zoom-mas" type="button" title="Acercar (+)" aria-label="Acercar">+</button>
         <button id="btn-ajustar" type="button" title="Ajustar a la ventana (0)">Ajustar</button>
       </div>
-      <div class="grupo">
+      <div class="grupo" id="grupo-altura">
         <label for="in-altura" class="tenue">Altura</label>
         <input id="in-altura" type="text" inputmode="decimal" class="num" disabled
                title="Altura de la línea seleccionada (px). Enter para aplicar. ↑/↓ para mover 1 px, Shift para 0.1 px">
         <span class="tenue">px</span>
       </div>
       <span class="espacio"></span>
+      <div class="segmentado" role="group" aria-label="Qué anotar">
+        <button id="btn-vista-lineas" type="button" aria-pressed="true" title="Ver y editar las líneas del frame (tecla L)">Líneas</button>
+        <button id="btn-vista-puntos" type="button" aria-pressed="false" title="Ver y editar los pares de puntos del frame (tecla P)">Puntos</button>
+      </div>
       <div class="grupo">
         <button id="btn-nueva" type="button" aria-pressed="false" title="Clic: línea de borde a borde · clic y arrastrar: solo ese tramo">Nueva línea</button>
         <button id="btn-puntos" type="button" aria-pressed="false" title="Pares de puntos en la misma columna: clic en un borde y clic en el otro (mínimo 10 pares por frame)">Marcar puntos</button>
@@ -64,13 +68,15 @@
         </div>
         <ul id="lista-frames" class="lista"></ul>
         <p class="nota">
-          Cada frame se anota con <b>2 líneas</b> (paredes) o con al menos <b>10 pares de puntos</b>.
+          Cada frame puede llevar <b>2 líneas</b> (paredes), al menos <b>10 pares de puntos</b>, o ambos.
+          Cambia entre <b>Líneas</b> y <b>Puntos</b> arriba: cada vista muestra solo lo suyo.
           Tus anotaciones se guardan en este navegador. Al terminar, pulsa
           <b>Descargar anotaciones</b> y envía el archivo al equipo del proyecto.
         </p>
         <details class="ayuda">
           <summary>Atajos y controles</summary>
           <dl>
+            <dt>L / P</dt><dd>vista Líneas / Puntos</dd>
             <dt>Marcar puntos</dt><dd>clic en un borde, clic en el otro (misma columna)</dd>
             <dt>Arrastrar punto</dt><dd>ajustarlo en vertical</dd>
             <dt>Arrastrar ancla</dt><dd>curvatura</dd>

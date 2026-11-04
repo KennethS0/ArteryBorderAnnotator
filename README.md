@@ -14,13 +14,14 @@ anota, y al terminar descarga un archivo y lo envía al equipo.
 1. Abre el link y elige un video arriba a la izquierda.
 2. Ve al frame que quieras: escríbelo en el cuadro de número + Enter, o usa ◀ ▶ / ← →.
    La meta es unos 25 frames por video.
-3. Anota el frame de **una** de estas dos formas (no las dos en el mismo frame):
+3. Anota el frame con líneas, con pares de puntos o con ambos. Con el selector **Líneas | Puntos**
+   de la barra (o las teclas L / P) eliges qué ves y editas: cada vista oculta lo de la otra.
 
-   **A. Líneas** — **Nueva línea** + clic sobre la pared superior de la arteria; repite para la
+   **A. Líneas** (vista Líneas) — **Nueva línea** + clic sobre la pared superior de la arteria; repite para la
    inferior. La línea va de borde a borde; para que cubra solo un tramo, haz clic y arrastra en
    horizontal. Luego ajusta cada línea al borde (paso 4).
 
-   **B. Pares de puntos** — **Marcar puntos**, clic en una pared y clic en la otra: el segundo
+   **B. Pares de puntos** (vista Puntos) — **Marcar puntos**, clic en una pared y clic en la otra: el segundo
    punto queda en la misma columna que el primero. Repite en distintas posiciones a lo largo de la
    arteria: **mínimo 10 pares por frame**. El modo queda activo para seguir marcando; Esc cancela
    un punto a medias. Para ajustar un punto, arrástralo (solo se mueve en vertical).
@@ -34,8 +35,8 @@ anota, y al terminar descarga un archivo y lo envía al equipo.
 5. Al terminar, pulsa **Descargar anotaciones**, escribe tu nombre y **envía el archivo**
    `anotaciones_<tu_nombre>_<fecha>.json` al equipo.
 
-El panel derecho cuenta los frames **completos** (2 líneas, o 10 pares de puntos o más) y marca
-en ámbar los que no lo están. Al descargar se avisa si algún frame tiene menos de 10 pares.
+El panel derecho cuenta los frames **completos** (2 líneas, o 10 pares de puntos o más), muestra
+lo que tiene cada frame (p. ej. `30.0 px · 10 pts`) y marca en ámbar lo incompleto. Al descargar se avisa si algún frame tiene menos de 10 pares.
 
 Tu trabajo se guarda en el navegador mientras anotas, así que recargar la página no lo borra.
 Pero **solo vive en ese navegador y esa computadora**: hasta que no descargas y envías el archivo,
@@ -44,6 +45,7 @@ otra computadora, usa **Cargar archivo** con el último archivo que descargaste.
 
 | Acción | Cómo |
 |---|---|
+| Cambiar de vista | selector **Líneas / Puntos** o teclas L / P |
 | Par de puntos | **Marcar puntos** + clic en un borde + clic en el otro (mín. 10 por frame) |
 | Ajustar un punto | arrastrarlo (en vertical) |
 | Curvatura | arrastrar un ancla |
@@ -80,11 +82,12 @@ usa la versión editada más recientemente.
 
 `scripts/lineas_anotadas.py` reconstruye cada línea anotada con el mismo cálculo que usa la
 página para dibujarla. Devuelve las paredes con la misma forma que las de
-`deteccion_bordes.py`: un valor por columna `x` y `NaN` fuera del tramo anotado. Para los frames
-anotados con pares de puntos, `a.puntos()` da las coordenadas exactas de cada par, y
-`comparar_paredes` evalúa la detección en la `x` exacta de cada par, interpolando entre
-columnas. Los frames incompletos (menos de 10 pares, o líneas que no son exactamente 2) se
-descartan con un aviso.
+`deteccion_bordes.py`: un valor por columna `x` y `NaN` fuera del tramo anotado. Un frame puede tener líneas y pares a la vez: `paredes()`,
+`comparar_paredes()` y `resumen()` aceptan `fuente="lineas"` o `fuente="pares"`. Si no se
+indica, usan las líneas cuando hay 2, y si no, los pares. `a.puntos()` da las coordenadas exactas
+de cada par, y con `fuente="pares"` la detección se evalúa en la `x` exacta de cada par,
+interpolando entre columnas. Lo incompleto (menos de 10 pares, o líneas que no son exactamente 2)
+se descarta con un aviso, sin perder el otro tipo del mismo frame.
 
 ```python
 from lineas_anotadas import cargar_anotaciones, comparar_paredes
@@ -127,7 +130,7 @@ posición en pantalla coincide con la del archivo (24 puntos medidos, diferencia
         },
         "5": {
           "actualizado": "…",
-          "lineas": [],
+          "lineas": [ … ],
           "pares": [
             {"x": 26.0, "y_superior": 99.6, "y_inferior": 130.5},
             {"x": 39.0, "y_superior": 102.7, "y_inferior": 128.7},
@@ -142,8 +145,9 @@ posición en pantalla coincide con la del archivo (24 puntos medidos, diferencia
 
 Son exactamente los datos fuente de la versión de escritorio: `y_ancla = altura + dy`, con las
 líneas ordenadas de arriba hacia abajo. Los `pares` (opcionales) están ordenados por `x`, con
-`y_superior < y_inferior`. `importar_anotaciones.py` exporta los frames con pares en formato
-`pares_v1`, con mediciones `punto_superior` / `punto_inferior` / `distancia_px`. Frames desde 0, en píxeles de la imagen original.
+`y_superior < y_inferior`. `importar_anotaciones.py` exporta los pares en formato `pares_v1` (`frame_<n>_pares.json`,
+con mediciones `punto_superior` / `punto_inferior` / `distancia_px`), junto a los archivos de
+líneas del mismo frame. El CSV tiene una fila por frame, persona y tipo. Frames desde 0, en píxeles de la imagen original.
 
 ## Cómo están los videos en el sitio
 

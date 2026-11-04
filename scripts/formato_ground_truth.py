@@ -185,7 +185,8 @@ def exportar_frame_pares(frame_bgr, pares, carpeta, *, video_nombre, ruta_video,
 
     pares: [(x, y_superior, y_inferior), ...]. El JSON usa el formato de mediciones de la
     primera versión de escritorio (punto_superior / punto_inferior / distancia_px), con
-    "formato": "pares_v1".
+    "formato": "pares_v1". Los archivos llevan el sufijo "_pares" (frame_<n>_pares.json,
+    frame_<n>_pares_anotado.png) para convivir con los de líneas del mismo frame.
     """
     carpeta = Path(carpeta)
     carpeta.mkdir(parents=True, exist_ok=True)
@@ -221,6 +222,6 @@ def exportar_frame_pares(frame_bgr, pares, carpeta, *, video_nombre, ruta_video,
     if extra:
         datos.update(extra)
     cv2.imwrite(str(carpeta / f"frame_{idx}_original.png"), frame_bgr)
-    cv2.imwrite(str(carpeta / f"frame_{idx}_anotado.png"), anotada)
-    (carpeta / f"frame_{idx}.json").write_text(json.dumps(datos, indent=2, ensure_ascii=False), encoding="utf-8")
+    cv2.imwrite(str(carpeta / f"frame_{idx}_pares_anotado.png"), anotada)
+    (carpeta / f"frame_{idx}_pares.json").write_text(json.dumps(datos, indent=2, ensure_ascii=False), encoding="utf-8")
     return datos

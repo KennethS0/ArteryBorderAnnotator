@@ -3,9 +3,11 @@
 lineas_anotadas.py — Reconstruye numéricamente las anotaciones de las paredes de la arteria
 a partir de los archivos que exporta la página web, para compararlas con las paredes detectadas.
 
-Cada frame se anota de una de dos formas:
-  * 2 líneas curvables (pared superior e inferior), o
+Cada frame puede tener uno o los dos tipos de anotación:
+  * 2 líneas curvables (pared superior e inferior), y/o
   * al menos 10 pares de puntos verticales: en una misma columna x, un punto en cada pared.
+Las funciones que dan paredes o comparan aceptan fuente="lineas" o fuente="pares"; si no se
+indica, se usan las líneas cuando el frame tiene 2, y si no, los pares.
 
 Cada línea se guarda como "altura" + anclas (x, dy). La curva pasa por todas las anclas
 (y_ancla = altura + dy) y entre ellas se interpola con PCHIP. Es exactamente el mismo cálculo
@@ -30,9 +32,10 @@ Uso como módulo (p. ej. desde el notebook):
     m = comparar_paredes(a, sup_det, inf_det)
     print(m["superior"]["mae_px"], m["diametro"]["sesgo_px"])
 
-    # Frames anotados con pares de puntos:
-    if a.tipo == "pares":
+    # Pares de puntos (si el frame los tiene):
+    if a.pares_completos():
         x, y_sup, y_inf = a.puntos()                         # coordenadas exactas de cada par
+        m_pares = comparar_paredes(a, sup_det, inf_det, fuente="pares")
 
 Uso desde la terminal:
 
@@ -162,19 +165,40 @@ class Anotacion:
 
     @property
     def tipo(self):
-        """"lineas" o "pares"."""
+        """"lineas", "pares" o "ambos": qué tiene anotado el frame."""
+        if len(self.lineas) and len(self.pares):
+            return "ambos"
         return "pares" if len(self.pares) else "lineas"
 
+    def lineas_completas(self):
+        return len(self.lineas) == 2
+
+    def pares_completos(self, min_pares=MIN_PARES):
+        return len(self.pares) >= min_pares
+
     def completa(self, min_pares=MIN_PARES):
-        """2 líneas, o al menos `min_pares` pares de puntos."""
-        return len(self.pares) >= min_pares if self.tipo == "pares" else len(self.lineas) == 2
+        """Al menos uno de los dos tipos completo: 2 líneas, o `min_pares` pares de puntos o más."""
+        return self.lineas_completas() or self.pares_completos(min_pares)
+
+    def fuentes(self):
+        """Tipos presentes, en orden: ["lineas"], ["pares"] o ["lineas", "pares"]."""
+        return [f for f, n in (("lineas", len(self.lineas)), ("pares", len(self.pares))) if n]
+
+    def _fuente(self, fuente):
+        if fuente is None:
+            fuente = "lineas" if self.lineas_completas() or not len(self.pares) else "pares"
+        if fuente not in ("lineas", "pares"):
+            raise ValueError('fuente debe ser "lineas" o "pares"')
+        if fuente == "pares" and not len(self.pares):
+            raise ValueError(f"{self.video} frame {self.frame} ({self.anotador}): no tiene pares de puntos")
+        return fuente
 
     def puntos(self):
         """Pares de puntos: (x, y_superior, y_inferior), cada uno un arreglo de largo n (ordenados por x).
         Son exactamente las coordenadas marcadas en la página (x con decimales)."""
         return self.pares[:, 0].copy(), self.pares[:, 1].copy(), self.pares[:, 2].copy()
 
-    def paredes(self):
+    def paredes(self, fuente=None):
         """(pared_superior, pared_inferior): arreglos de largo `ancho`, NaN donde no hay anotación.
 
         - Con líneas: el valor de la curva en cada columna del tramo anotado (requiere 2 líneas;
@@ -183,7 +207,7 @@ class Anotacion:
           caen en la misma columna se promedian). Para comparar con la x exacta usa puntos()
           o comparar_paredes(), que interpola la detección en esa x.
         """
-        if self.tipo == "pares":
+        if self._fuente(fuente) == "pares":
             sup = np.full(self.ancho, np.nan)
             inf = np.full(self.ancho, np.nan)
             cols = np.clip(np.rint(self.pares[:, 0]).astype(int), 0, self.ancho - 1)
@@ -197,20 +221,20 @@ class Anotacion:
                              "línea(s); para las paredes se necesitan exactamente 2")
         return self.lineas[0].por_columna(self.ancho), self.lineas[1].por_columna(self.ancho)
 
-    def diametro(self):
+    def diametro(self, fuente=None):
         """Distancia vertical por columna (pared inferior − superior); NaN donde no se solapan."""
-        sup, inf = self.paredes()
+        sup, inf = self.paredes(fuente)
         return inf - sup
 
-    def resumen(self):
-        if self.tipo == "pares":
+    def resumen(self, fuente=None):
+        if self._fuente(fuente) == "pares":
             x, s, i = self.puntos()
             d = i - s
             return {"n_columnas": len(d), "n_pares": len(d), "x_inicio": float(x.min()), "x_fin": float(x.max()),
                     "diametro_medio_px": float(np.mean(d)), "diametro_mediana_px": float(np.median(d)),
                     "diametro_min_px": float(np.min(d)), "diametro_max_px": float(np.max(d)),
                     "diametro_desv_px": float(np.std(d))}
-        d = self.diametro()
+        d = self.diametro("lineas")
         ok = ~np.isnan(d)
         if not ok.any():
             return {"n_columnas": 0}
@@ -293,8 +317,9 @@ def cargar_anotaciones(*entradas, ultima_version=True, solo_completas=True, min_
     (video, frame, anotador). Si la misma persona anotó un frame en varios archivos, se queda con
     la versión editada más recientemente (ultima_version=True).
 
-    Con solo_completas=True (por defecto) se descartan, con un aviso, los frames incompletos:
-    con pares de puntos pero menos de `min_pares`, o con líneas pero no exactamente 2."""
+    Con solo_completas=True (por defecto) se descarta, con un aviso, lo incompleto de cada frame:
+    los pares de puntos si son menos de `min_pares`, y las líneas si no son exactamente 2. Si a un
+    frame no le queda nada, se omite."""
     rutas = []
     for e in entradas:
         for p in ([e] if isinstance(e, (str, Path)) else e):
@@ -315,11 +340,16 @@ def cargar_anotaciones(*entradas, ultima_version=True, solo_completas=True, min_
         todas = list(unicas.values())
     if solo_completas:
         for a in todas:
-            if not a.completa(min_pares):
-                que = (f"{len(a.pares)} pares de puntos (mínimo {min_pares})" if a.tipo == "pares"
-                       else f"{len(a.lineas)} línea(s) (se necesitan 2)")
-                print(f"[aviso] {a.video} frame {a.frame} ({a.anotador}): {que}; se omite.", file=sys.stderr)
-        todas = [a for a in todas if a.completa(min_pares)]
+            quien = f"{a.video} frame {a.frame} ({a.anotador})"
+            if len(a.pares) and not a.pares_completos(min_pares):
+                print(f"[aviso] {quien}: {len(a.pares)} pares de puntos (mínimo {min_pares}); se omiten los pares.",
+                      file=sys.stderr)
+                a.pares = np.zeros((0, 3))
+            if len(a.lineas) and not a.lineas_completas():
+                print(f"[aviso] {quien}: {len(a.lineas)} línea(s) (se necesitan 2); se omiten las líneas.",
+                      file=sys.stderr)
+                a.lineas = []
+        todas = [a for a in todas if len(a.lineas) or len(a.pares)]
     return sorted(todas, key=lambda a: (a.video, a.frame, a.anotador))
 
 
@@ -350,24 +380,26 @@ def interpolar_en(pared, x):
     return np.where(t == 0, pared[x0], v)
 
 
-def comparar_paredes(anotacion, sup_detectada, inf_detectada):
+def comparar_paredes(anotacion, sup_detectada, inf_detectada, fuente=None):
     """Errores de la detección respecto de la anotación (detectado − anotado), en px.
 
     - Líneas: se usan las columnas donde ambas existen (ni NaN en la detección ni fuera del tramo
       anotado).
     - Pares de puntos: la detección se evalúa en la x exacta de cada par (interpolando entre
       columnas vecinas); los pares donde la detección es NaN no cuentan.
+    fuente: "lineas" o "pares" (por defecto, las líneas si el frame tiene 2; si no, los pares).
     sesgo > 0 = la detección queda más abajo (pared) o más ancha (diámetro)."""
     sup_det = np.asarray(sup_detectada, float)
     inf_det = np.asarray(inf_detectada, float)
     if sup_det.shape != (anotacion.ancho,) or inf_det.shape != (anotacion.ancho,):
         raise ValueError(f"las paredes detectadas deben tener largo {anotacion.ancho}")
-    if anotacion.tipo == "pares":
+    fuente = anotacion._fuente(fuente)
+    if fuente == "pares":
         x, sup, inf = anotacion.puntos()
         sd, idt = interpolar_en(sup_det, x), interpolar_en(inf_det, x)
         return {"superior": _errores(sup, sd), "inferior": _errores(inf, idt),
                 "diametro": _errores(inf - sup, idt - sd)}
-    sup, inf = anotacion.paredes()
+    sup, inf = anotacion.paredes("lineas")
     return {"superior": _errores(sup, sup_det), "inferior": _errores(inf, inf_det),
             "diametro": _errores(inf - sup, inf_det - sup_det)}
 
@@ -389,15 +421,16 @@ def verificar_anclas(anotacion, tol=1e-9):
     return peor
 
 
-def imagen_verificacion(anotacion, frame_bgr, zoom=3):
+def imagen_verificacion(anotacion, frame_bgr, zoom=3, fuente=None):
     """El frame ampliado `zoom` veces (sin suavizar, como en la página) con las curvas y anclas
     dibujadas con la misma convención: la columna x ocupa [x*zoom, (x+1)*zoom) y su centro es
-    (x + 0.5)*zoom."""
+    (x + 0.5)*zoom. Como en la página, se dibuja un solo tipo: fuente="lineas" o "pares"."""
+    fuente = anotacion._fuente(fuente)
     import cv2
     colores = [(0, 255, 0), (80, 80, 255), (255, 170, 80), (0, 210, 255), (255, 0, 255), (255, 255, 0)]
     img = cv2.resize(frame_bgr, None, fx=zoom, fy=zoom, interpolation=cv2.INTER_NEAREST)
     S = 16
-    for k, l in enumerate(anotacion.lineas):
+    for k, l in enumerate(anotacion.lineas if fuente == "lineas" else []):
         col = colores[k % len(colores)]
         xs = np.linspace(l.x_inicio, l.x_fin, max(2, int((l.x_fin - l.x_inicio) * zoom) + 1))
         ys = l.y(xs)
@@ -409,7 +442,7 @@ def imagen_verificacion(anotacion, frame_bgr, zoom=3):
             cv2.rectangle(img, (cx - r, cy - r), (cx + r, cy + r), col, 1)
         cv2.putText(img, f"L{k + 1}", (4, int(round((ys[0] + 0.5) * zoom)) - 4),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, col, 1, cv2.LINE_AA)
-    for x, ys, yi in anotacion.pares:
+    for x, ys, yi in (anotacion.pares if fuente == "pares" else []):
         cx = int(round((x + 0.5) * zoom))
         p1, p2 = int(round((ys + 0.5) * zoom)), int(round((yi + 0.5) * zoom))
         r = max(3, int(zoom * 1.1))
@@ -417,12 +450,12 @@ def imagen_verificacion(anotacion, frame_bgr, zoom=3):
         for py in (p1, p2):
             cv2.circle(img, (cx, py), r, (255, 229, 0), 1, cv2.LINE_AA)
             cv2.line(img, (cx - 2 * r, py), (cx + 2 * r, py), (255, 229, 0), 1)
-    if anotacion.tipo == "pares":
-        r = anotacion.resumen()
+    if fuente == "pares":
+        r = anotacion.resumen("pares")
         texto = (f"{anotacion.video}  frame {anotacion.frame}  {anotacion.anotador}  {r['n_pares']} pares  "
                  f"diametro medio {r['diametro_medio_px']:.2f} px")
     elif len(anotacion.lineas) == 2:
-        r = anotacion.resumen()
+        r = anotacion.resumen("lineas")
         texto = f"{anotacion.video}  frame {anotacion.frame}  {anotacion.anotador}  diametro medio {r['diametro_medio_px']:.2f} px"
     else:
         texto = f"{anotacion.video}  frame {anotacion.frame}  {anotacion.anotador}  {len(anotacion.lineas)} linea(s)"
@@ -461,15 +494,15 @@ def escribir_csv(anotaciones, ruta):
         w.writerow(["video", "frame", "tiempo_s", "anotador", "tipo", "x", "y_superior", "y_inferior", "diametro_px"])
         for a in anotaciones:
             t = "" if a.tiempo_s is None else f"{a.tiempo_s:.4f}"
-            if a.tipo == "pares":
-                for x, ys, yi in a.pares:
-                    w.writerow([a.video, a.frame, t, a.anotador, "pares", f"{x:.4f}", f"{ys:.4f}", f"{yi:.4f}", f"{yi - ys:.4f}"])
-                    filas += 1
+            for x, ys, yi in a.pares:
+                w.writerow([a.video, a.frame, t, a.anotador, "pares", f"{x:.4f}", f"{ys:.4f}", f"{yi:.4f}", f"{yi - ys:.4f}"])
+                filas += 1
+            if not len(a.lineas):
                 continue
             try:
-                sup, inf = a.paredes()
+                sup, inf = a.paredes("lineas")
             except ValueError as exc:
-                print(f"[aviso] {exc}; se omite.", file=sys.stderr)
+                print(f"[aviso] {exc}; se omiten las líneas.", file=sys.stderr)
                 continue
             for x in range(a.ancho):
                 if math.isnan(sup[x]) and math.isnan(inf[x]):
@@ -500,8 +533,9 @@ def main():
         sys.exit("No se encontraron anotaciones.")
     for a in anotaciones:
         verificar_anclas(a)
-    nl = sum(a.tipo == "lineas" for a in anotaciones)
-    print(f"{len(anotaciones)} anotaciones ({nl} con líneas, {len(anotaciones) - nl} con pares de puntos); "
+    nl = sum(bool(len(a.lineas)) for a in anotaciones)
+    np_ = sum(bool(len(a.pares)) for a in anotaciones)
+    print(f"{len(anotaciones)} frames anotados ({nl} con líneas, {np_} con pares de puntos); "
           "todas las curvas pasan exactamente por sus anclas.")
 
     n = escribir_csv(anotaciones, args.salida)
@@ -520,8 +554,10 @@ def main():
             frames = leer_frames(ruta, [a.frame for a in delvideo])
             for a in delvideo:
                 if a.frame in frames:
-                    nombre = f"{vid}_f{a.frame:05d}_{''.join(c if c.isalnum() else '_' for c in a.anotador)}.png"
-                    cv2.imwrite(str(carpeta / nombre), imagen_verificacion(a, frames[a.frame], args.zoom))
+                    base = f"{vid}_f{a.frame:05d}_{''.join(c if c.isalnum() else '_' for c in a.anotador)}"
+                    for fuente in a.fuentes():
+                        cv2.imwrite(str(carpeta / f"{base}_{fuente}.png"),
+                                    imagen_verificacion(a, frames[a.frame], args.zoom, fuente))
         print(f"Imágenes de verificación en {carpeta.resolve()}")
 
 
