@@ -45,7 +45,8 @@
       <span class="espacio"></span>
       <div class="grupo">
         <button id="btn-nueva" type="button" aria-pressed="false" title="Clic: línea de borde a borde · clic y arrastrar: solo ese tramo">Nueva línea</button>
-        <button id="btn-eliminar" type="button" aria-pressed="false" title="Clic en un ancla la quita · clic en la línea la borra">Eliminar</button>
+        <button id="btn-puntos" type="button" aria-pressed="false" title="Pares de puntos en la misma columna: clic en un borde y clic en el otro (mínimo 10 pares por frame)">Marcar puntos</button>
+        <button id="btn-eliminar" type="button" aria-pressed="false" title="Clic en un ancla o punto lo quita · clic en la línea la borra">Eliminar</button>
       </div>
     </nav>
 
@@ -56,19 +57,22 @@
       </div>
 
       <aside class="panel">
-        <h2>Frames anotados en este video</h2>
+        <h2>Frames completos en este video</h2>
         <div class="progreso">
           <span id="lbl-progreso" class="num">0 / 25</span>
           <div class="pista"><div id="barra-progreso" class="barra"></div></div>
         </div>
         <ul id="lista-frames" class="lista"></ul>
         <p class="nota">
+          Cada frame se anota con <b>2 líneas</b> (paredes) o con al menos <b>10 pares de puntos</b>.
           Tus anotaciones se guardan en este navegador. Al terminar, pulsa
           <b>Descargar anotaciones</b> y envía el archivo al equipo del proyecto.
         </p>
         <details class="ayuda">
           <summary>Atajos y controles</summary>
           <dl>
+            <dt>Marcar puntos</dt><dd>clic en un borde, clic en el otro (misma columna)</dd>
+            <dt>Arrastrar punto</dt><dd>ajustarlo en vertical</dd>
             <dt>Arrastrar ancla</dt><dd>curvatura</dd>
             <dt>Arrastrar línea</dt><dd>altura</dd>
             <dt>Doble clic en línea</dt><dd>agregar ancla</dd>
@@ -79,7 +83,7 @@
             <dt>Rueda</dt><dd>zoom</dd>
             <dt>Clic derecho + arrastrar</dt><dd>mover la vista</dd>
             <dt>Ctrl+S</dt><dd>descargar anotaciones</dd>
-            <dt>Esc</dt><dd>cancelar</dd>
+            <dt>Esc</dt><dd>cancelar punto / salir del modo</dd>
           </dl>
         </details>
       </aside>
@@ -92,6 +96,7 @@
     <form id="dlg-form" method="dialog">
       <h2 id="dlg-titulo">Descargar anotaciones</h2>
       <p id="dlg-resumen" class="tenue"></p>
+      <p id="dlg-aviso" class="aviso" hidden></p>
       <label for="dlg-nombre">Tu nombre</label>
       <input id="dlg-nombre" type="text" autocomplete="name" required placeholder="Nombre y apellido">
       <p class="tenue pequeno">Va dentro del archivo, para saber quién hizo cada anotación.</p>

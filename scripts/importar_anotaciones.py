@@ -4,9 +4,10 @@ importar_anotaciones.py — Convierte los archivos que envían los anotadores
 (anotaciones_<nombre>_<fecha>.json, descargados de la web) al mismo formato que exporta la
 herramienta de escritorio (anotador_frames_v2.py).
 
-Por cada anotación (video, frame, persona):
+Cada frame viene anotado con 2 líneas o con pares de puntos verticales (mínimo 10; los frames
+con menos se omiten con un aviso). Por cada anotación (video, frame, persona):
     <salida>/<video>_ground_truth/<persona>/<frame>/
-        frame_<n>.json            formato "lineas_v2" + quién anotó y cuándo
+        frame_<n>.json            formato "lineas_v2" (líneas) o "pares_v1" (puntos) + quién anotó
         frame_<n>_original.png    el frame leído del .avi original con OpenCV
         frame_<n>_anotado.png     el frame con las curvas dibujadas
 
@@ -33,9 +34,10 @@ from pathlib import Path
 
 import numpy as np
 
-from formato_ground_truth import distancias_consecutivas, exportar_frame, orden_vertical
+from formato_ground_truth import distancias_consecutivas, exportar_frame, exportar_frame_pares, orden_vertical
 
 FORMATO = "anotaciones_web_v1"
+MIN_PARES = 10
 
 
 def nombre_carpeta(texto):
@@ -75,7 +77,10 @@ def leer_archivos(rutas):
                 clave = (vid, int(f), persona)
                 actual = anotaciones.get(clave)
                 if actual is None or (a.get("actualizado") or "") >= (actual["actualizado"] or ""):
-                    anotaciones[clave] = {"lineas": a_lineas(a.get("lineas")), "anotador": anotador,
+                    pares = sorted((float(q["x"]), min(float(q["y_superior"]), float(q["y_inferior"])),
+                                    max(float(q["y_superior"]), float(q["y_inferior"])))
+                                   for q in a.get("pares") or [])
+                    anotaciones[clave] = {"lineas": a_lineas(a.get("lineas")), "pares": pares, "anotador": anotador,
                                           "actualizado": a.get("actualizado"), "archivo": Path(ruta).name}
                 n += 1
         print(f"{Path(ruta).name}: {anotador}, {n} frames")
@@ -101,8 +106,14 @@ def leer_frames(ruta, indices):
     return frames
 
 
-def procesar(anotaciones, metas, videos_dir, salida, con_imagenes):
+def procesar(anotaciones, metas, videos_dir, salida, con_imagenes, min_pares=MIN_PARES):
     salida = Path(salida)
+    for k in sorted(anotaciones):
+        n = len(anotaciones[k]["pares"])
+        if n and n < min_pares:
+            print(f"[aviso] {k[0]} frame {k[1]} ({anotaciones[k]['anotador']}): {n} pares de puntos "
+                  f"(mínimo {min_pares}); se omite.")
+            del anotaciones[k]
     salida.mkdir(parents=True, exist_ok=True)
     filas = []
     for vid in sorted({k[0] for k in anotaciones}):
@@ -119,15 +130,25 @@ def procesar(anotaciones, metas, videos_dir, salida, con_imagenes):
         for (_, frame, persona) in claves:
             a = anotaciones[(vid, frame, persona)]
             lineas = a["lineas"]
+            pares = a["pares"]
             ordenadas = [lineas[i] for i in orden_vertical(lineas)] if lineas else []
-            pares = distancias_consecutivas(ordenadas) if ordenadas else []
+            pares_lineas = distancias_consecutivas(ordenadas) if ordenadas else []
             fila = {"video": vid, "frame": frame, "tiempo_s": round(frame / fps, 4) if fps else "",
-                    "persona": persona, "anotador": a["anotador"], "n_lineas": len(lineas),
+                    "persona": persona, "anotador": a["anotador"], "tipo": "pares" if pares else "lineas",
+                    "n_lineas": len(lineas), "n_pares": len(pares),
                     "diametro_medio_px": "", "diametro_mediana_px": "", "diametro_min_px": "",
                     "diametro_max_px": "", "diametro_desv_px": "", "x_inicio": "", "x_fin": "",
                     "actualizado": a["actualizado"] or "", "archivo": a["archivo"]}
-            if len(lineas) == 2 and pares:
-                _, _, cols, d = pares[0]
+            if len(a["pares"]):
+                d = np.array([yi - ys for _, ys, yi in a["pares"]])
+                fila.update({"diametro_medio_px": round(float(np.mean(d)), 3),
+                             "diametro_mediana_px": round(float(np.median(d)), 3),
+                             "diametro_min_px": round(float(np.min(d)), 3),
+                             "diametro_max_px": round(float(np.max(d)), 3),
+                             "diametro_desv_px": round(float(np.std(d)), 3),
+                             "x_inicio": round(a["pares"][0][0], 2), "x_fin": round(a["pares"][-1][0], 2)})
+            elif len(lineas) == 2 and pares_lineas:
+                _, _, cols, d = pares_lineas[0]
                 fila.update({"diametro_medio_px": round(float(np.mean(d)), 3),
                              "diametro_mediana_px": round(float(np.median(d)), 3),
                              "diametro_min_px": round(float(np.min(d)), 3),
@@ -135,7 +156,14 @@ def procesar(anotaciones, metas, videos_dir, salida, con_imagenes):
                              "diametro_desv_px": round(float(np.std(d)), 3),
                              "x_inicio": int(cols[0]), "x_fin": int(cols[-1])})
             filas.append(fila)
-            if frame in frames and lineas:
+            extra = {"anotador": a["anotador"], "actualizado_web": a["actualizado"],
+                     "archivo_origen": a["archivo"], "origen": "web"}
+            if frame in frames and pares:
+                exportar_frame_pares(frames[frame], pares, salida / f"{vid}_ground_truth" / persona / str(frame),
+                                     video_nombre=f"{vid}.avi", ruta_video=ruta.resolve(), frame=frame, fps=fps,
+                                     extra=extra)
+                escritos += 1
+            elif frame in frames and lineas:
                 exportar_frame(frames[frame], lineas, salida / f"{vid}_ground_truth" / persona / str(frame),
                                video_nombre=f"{vid}.avi", ruta_video=ruta.resolve(), frame=frame, fps=fps,
                                extra={"anotador": a["anotador"], "actualizado_web": a["actualizado"],
@@ -143,7 +171,7 @@ def procesar(anotaciones, metas, videos_dir, salida, con_imagenes):
                 escritos += 1
         print(f"{vid}: {len(claves)} anotaciones" + (f", {escritos} exportadas con imágenes" if con_imagenes else ""))
 
-    campos = ["video", "frame", "tiempo_s", "persona", "anotador", "n_lineas", "diametro_medio_px",
+    campos = ["video", "frame", "tiempo_s", "persona", "anotador", "tipo", "n_lineas", "n_pares", "diametro_medio_px",
               "diametro_mediana_px", "diametro_min_px", "diametro_max_px", "diametro_desv_px",
               "x_inicio", "x_fin", "actualizado", "archivo"]
     ruta_csv = salida / "resumen_anotaciones.csv"

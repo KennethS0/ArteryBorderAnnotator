@@ -4,9 +4,11 @@
 // lectura/escritura/exportación de anotaciones (ver almacen-local.js).
 
 import * as G from "./geometria.js";
-import { META_FRAMES_POR_VIDEO, AUTOGUARDADO_S } from "./config.js";
+import { META_FRAMES_POR_VIDEO, AUTOGUARDADO_S, MIN_PARES } from "./config.js";
 
 const COLORES = ["#00ff00", "#ff5050", "#50aaff", "#ffd200", "#ff00ff", "#00ffff"];
+const COLOR_PARES = "#00e5ff";       // pares de puntos verticales
+const COLOR_PARES_ACTIVO = "#ffd200";
 const RADIO_CLIC = 10;         // px de pantalla para "atrapar" un ancla o una línea
 const ZOOM_PASO = 1.25;
 const ZOOM_MAX = 40;           // px de pantalla por px de imagen
@@ -29,6 +31,8 @@ export function iniciarApp(backend) {
     video: null,
     frame: 0,
     lineas: new Map(),        // frame -> [{altura, anclas:[{x, dy}]}]
+    pares: new Map(),         // frame -> [{x, y1, y2}]  (pares de puntos verticales, y1 < y2)
+    pendiente: null,          // {x, y}: primer punto de un par en curso
     sinGuardar: new Set(),
     guardando: new Set(),
     errorGuardado: null,
@@ -37,7 +41,7 @@ export function iniciarApp(backend) {
     bloques: new Map(),       // nº bloque -> Promise<HTMLImageElement> (LRU)
     imgBloque: null,          // {b, img} del frame actual
     cargando: false,
-    modo: null,               // null (edición) | "nueva" | "eliminar"
+    modo: null,               // null (edición) | "nueva" | "puntos" | "eliminar"
     sel: null,
     drag: null,
     pan: null,
@@ -79,6 +83,15 @@ export function iniciarApp(backend) {
       ? `Se descargarán ${frames} frame${frames === 1 ? "" : "s"} anotado${frames === 1 ? "" : "s"} `
         + `en ${videos} video${videos === 1 ? "" : "s"}.`
       : "Todavía no has anotado ningún frame.";
+    const inc = backend.incompletos(MIN_PARES);
+    const aviso = $("dlg-aviso");
+    aviso.hidden = !inc.length;
+    if (inc.length) {
+      const lista = inc.slice(0, 6).map((x) => `${x.video} frame ${x.frame} (${x.n})`).join(", ")
+        + (inc.length > 6 ? ` y ${inc.length - 6} más` : "");
+      aviso.textContent = `Atención: ${inc.length === 1 ? "este frame tiene" : "estos frames tienen"} menos de `
+        + `${MIN_PARES} pares de puntos y no se podrán usar: ${lista}.`;
+    }
     $("dlg-nombre").value = backend.nombre;
     $("dlg-ok").disabled = !frames;
     dlg.showModal();
@@ -156,6 +169,8 @@ export function iniciarApp(backend) {
     st.historial.clear();
     st.sinGuardar.clear();
     st.lineas = new Map();
+    st.pares = new Map();
+    st.pendiente = null;
     $("lbl-total").textContent = `/ ${video.n_frames - 1}`;
     estado("Cargando anotaciones…");
     try {
@@ -165,6 +180,10 @@ export function iniciarApp(backend) {
           altura: l.altura,
           anclas: l.anclas.map((x) => ({ x: x.x, dy: x.dy })).sort((p, q) => p.x - q.x),
         })));
+        if (a.pares?.length) {
+          st.pares.set(f, a.pares.map((q) => ({ x: q.x, y1: q.y_superior, y2: q.y_inferior }))
+            .sort((p, q) => p.x - q.x));
+        }
       }
     } catch (e) {
       estado(`No se pudieron leer tus anotaciones: ${e.message || e}`);
@@ -205,6 +224,7 @@ export function iniciarApp(backend) {
     st.frame = f;
     st.sel = null;
     st.drag = null;
+    st.pendiente = null;
     $("in-frame").value = f;
     $("btn-ant").disabled = f === 0;
     $("btn-sig").disabled = f >= v.n_frames - 1;
@@ -253,6 +273,15 @@ export function iniciarApp(backend) {
     return st.lineas.get(f);
   }
 
+  function paresFrame(f = st.frame) {
+    if (!st.pares.has(f)) st.pares.set(f, []);
+    return st.pares.get(f);
+  }
+  const nLineas = (f = st.frame) => (st.lineas.get(f) || []).length;
+  const nPares = (f = st.frame) => (st.pares.get(f) || []).length;
+  /** Un frame completo: 2 líneas, o al menos MIN_PARES pares de puntos. */
+  const completo = (f) => nLineas(f) === 2 || nPares(f) >= MIN_PARES;
+
   function marcarCambio(msg) {
     st.sinGuardar.add(st.frame);
     programarGuardado(st.frame);
@@ -280,11 +309,13 @@ export function iniciarApp(backend) {
       altura: r1(actuales[i].altura),
       anclas: actuales[i].anclas.map((a) => ({ x: r1(a.x), dy: r1(a.dy) })),
     }));
+    const pares = [...(st.pares.get(f) || [])].sort((a, b) => a.x - b.x)
+      .map((q) => ({ x: r1(q.x), y_superior: r1(Math.min(q.y1, q.y2)), y_inferior: r1(Math.max(q.y1, q.y2)) }));
     st.sinGuardar.delete(f);
     st.guardando.add(f);
     actualizarIndicador();
     try {
-      await backend.guardar(video, f, lineas);
+      await backend.guardar(video, f, lineas, pares);
       st.errorGuardado = null;
     } catch (e) {
       st.errorGuardado = e.message || String(e);
@@ -328,9 +359,11 @@ export function iniciarApp(backend) {
   function renderLista() {
     const ul = $("lista-frames");
     ul.innerHTML = "";
-    const frames = [...st.lineas.entries()].filter(([, l]) => l.length).map(([f]) => f).sort((a, b) => a - b);
-    $("lbl-progreso").textContent = `${frames.length} / ${META_FRAMES_POR_VIDEO}`;
-    $("barra-progreso").style.width = `${Math.min(100, (100 * frames.length) / META_FRAMES_POR_VIDEO)}%`;
+    const frames = [...new Set([...st.lineas.keys(), ...st.pares.keys()])]
+      .filter((f) => nLineas(f) || nPares(f)).sort((a, b) => a - b);
+    const completos = frames.filter(completo).length;
+    $("lbl-progreso").textContent = `${completos} / ${META_FRAMES_POR_VIDEO}`;
+    $("barra-progreso").style.width = `${Math.min(100, (100 * completos) / META_FRAMES_POR_VIDEO)}%`;
     if (!frames.length) {
       const li = document.createElement("li");
       li.className = "vacio";
@@ -339,10 +372,11 @@ export function iniciarApp(backend) {
       return;
     }
     for (const f of frames) {
-      const ls = st.lineas.get(f);
+      const ls = st.lineas.get(f) || [];
       const pares = G.distanciasConsecutivas(ls);
+      const pts = st.pares.get(f) || [];
       const li = document.createElement("li");
-      if (f === st.frame) li.className = "actual";
+      li.className = [f === st.frame ? "actual" : "", completo(f) ? "" : "incompleto"].join(" ").trim();
       const btn = document.createElement("button");
       btn.type = "button";
       btn.onclick = () => { irA(f); lienzo.focus(); };
@@ -351,8 +385,17 @@ export function iniciarApp(backend) {
       n.textContent = `Frame ${f}`;
       const d = document.createElement("span");
       d.className = "dato";
-      d.textContent = pares.length === 1 ? `${G.media(pares[0].d).toFixed(1)} px`
-        : `${ls.length} línea${ls.length === 1 ? "" : "s"}`;
+      if (pts.length) {
+        const m = G.media(pts.map((q) => Math.abs(q.y2 - q.y1)));
+        d.textContent = pts.length < MIN_PARES ? `${pts.length}/${MIN_PARES} puntos`
+          : `${pts.length} pts · ${m.toFixed(1)} px`;
+      } else {
+        d.textContent = pares.length === 1 ? `${G.media(pares[0].d).toFixed(1)} px`
+          : `${ls.length} línea${ls.length === 1 ? "" : "s"}`;
+      }
+      if (!completo(f)) btn.title = pts.length
+        ? `Faltan ${MIN_PARES - pts.length} pares de puntos para el mínimo de ${MIN_PARES}`
+        : "Para medir el diámetro se necesitan 2 líneas";
       btn.append(n, d);
       if (st.sinGuardar.has(f) || st.guardando.has(f)) {
         const p = document.createElement("span");
@@ -435,6 +478,19 @@ export function iniciarApp(backend) {
     return mejor;
   }
 
+  /** [k, "y1"|"y2"] del punto de un par más cercano al clic, o null. */
+  function buscarPunto(cx, cy) {
+    let mejor = null, dmin = RADIO_CLIC;
+    (st.pares.get(st.frame) || []).forEach((q, k) => {
+      for (const c of ["y1", "y2"]) {
+        const [px, py] = imgACanvas(q.x, q[c]);
+        const d = Math.hypot(px - cx, py - cy);
+        if (d <= dmin) { mejor = [k, c]; dmin = d; }
+      }
+    });
+    return mejor;
+  }
+
   function buscarLinea(cx, cy) {
     const [x] = canvasAImgLibre(cx, cy);
     const tol = RADIO_CLIC / st.escala;
@@ -452,7 +508,7 @@ export function iniciarApp(backend) {
   function guardarHistorial() {
     if (!st.historial.has(st.frame)) st.historial.set(st.frame, []);
     const pila = st.historial.get(st.frame);
-    pila.push(copiar(lineasFrame()));
+    pila.push(copiar({ lineas: lineasFrame(), pares: paresFrame() }));
     if (pila.length > MAX_HISTORIAL) pila.shift();
   }
   const descartarHistorial = () => st.historial.get(st.frame)?.pop();
@@ -460,8 +516,11 @@ export function iniciarApp(backend) {
   function deshacer() {
     const pila = st.historial.get(st.frame);
     if (!pila?.length) return estado("No hay nada que deshacer en este frame.");
-    st.lineas.set(st.frame, pila.pop());
+    const prev = pila.pop();
+    st.lineas.set(st.frame, prev.lineas);
+    st.pares.set(st.frame, prev.pares);
     st.sel = null;
+    st.pendiente = null;
     marcarCambio("Cambio deshecho.");
   }
 
@@ -519,18 +578,26 @@ export function iniciarApp(backend) {
   // ------------------------------------------------------------------- modos
   function cambiarModo(modo, forzar = false) {
     if (forzar || st.modo === modo) modo = null;
+    if (modo === "nueva" && nPares()) {
+      return estado("Este frame ya tiene pares de puntos. Cada frame se anota con líneas o con puntos, no ambos.");
+    }
+    if (modo === "puntos" && nLineas()) {
+      return estado("Este frame ya tiene líneas. Cada frame se anota con líneas o con puntos, no ambos.");
+    }
     st.modo = modo;
     st.drag = null;
-    $("btn-nueva").classList.toggle("activo", modo === "nueva");
-    $("btn-eliminar").classList.toggle("activo", modo === "eliminar");
-    $("btn-nueva").setAttribute("aria-pressed", modo === "nueva");
-    $("btn-eliminar").setAttribute("aria-pressed", modo === "eliminar");
+    st.pendiente = null;
+    for (const [id, m] of [["btn-nueva", "nueva"], ["btn-puntos", "puntos"], ["btn-eliminar", "eliminar"]]) {
+      $(id).classList.toggle("activo", modo === m);
+      $(id).setAttribute("aria-pressed", modo === m);
+    }
     setCursor("crosshair");
     estado();
     dibujar();
   }
   $("btn-nueva").onclick = () => { cambiarModo("nueva"); lienzo.focus(); };
   $("btn-eliminar").onclick = () => { cambiarModo("eliminar"); lienzo.focus(); };
+  $("btn-puntos").onclick = () => { cambiarModo("puntos"); lienzo.focus(); };
 
   function setCursor(t) {
     if (t !== st.cursorTipo) { st.cursorTipo = t; lienzo.style.cursor = t; }
@@ -573,9 +640,10 @@ export function iniciarApp(backend) {
     st.cursor = canvasAImg(cx, cy);
     if (st.modo === null && st.video) {
       if (buscarAncla(cx, cy)) setCursor("move");
-      else if (buscarLinea(cx, cy) !== null) setCursor("ns-resize");
+      else if (buscarLinea(cx, cy) !== null || buscarPunto(cx, cy)) setCursor("ns-resize");
       else setCursor("crosshair");
     }
+    if (st.pendiente) dibujar();
     estado();
   });
 
@@ -588,13 +656,36 @@ export function iniciarApp(backend) {
 
   function presionar(cx, cy) {
     const ls = lineasFrame();
+    if (st.modo === "puntos") {
+      const p = canvasAImg(cx, cy);
+      if (!p) return;
+      if (nLineas()) return estado("Este frame ya tiene líneas. Cada frame se anota con líneas o con puntos, no ambos.");
+      if (!st.pendiente) { st.pendiente = { x: p[0], y: p[1] }; estado(); return dibujar(); }
+      if (Math.abs(p[1] - st.pendiente.y) < 0.5) return estado("El segundo punto debe estar en otra altura (la misma columna, otro borde).");
+      guardarHistorial();
+      const q = { x: st.pendiente.x, y1: Math.min(st.pendiente.y, p[1]), y2: Math.max(st.pendiente.y, p[1]) };
+      const pts = paresFrame();
+      pts.push(q);
+      pts.sort((a, b) => a.x - b.x);
+      st.pendiente = null;
+      const n = pts.length;
+      return marcarCambio(`Par ${n} marcado (${(q.y2 - q.y1).toFixed(1)} px).`
+        + (n < MIN_PARES ? ` Faltan ${MIN_PARES - n} para el mínimo de ${MIN_PARES}.` : ""));
+    }
     if (st.modo === "nueva") {
+      if (nPares()) return estado("Este frame ya tiene pares de puntos. Cada frame se anota con líneas o con puntos, no ambos.");
       const p = canvasAImg(cx, cy);
       if (!p) return;
       st.drag = { tipo: "nueva", x0: p[0], x1: p[0], y: p[1], cx0: cx };
       return dibujar();
     }
     if (st.modo === "eliminar") {
+      const pt = buscarPunto(cx, cy);
+      if (pt) {
+        guardarHistorial();
+        paresFrame().splice(pt[0], 1);
+        return marcarCambio("Par de puntos eliminado.");
+      }
       const hit = buscarAncla(cx, cy);
       if (hit) {
         const [i, j] = hit;
@@ -606,13 +697,21 @@ export function iniciarApp(backend) {
         return marcarCambio("Ancla eliminada.");
       }
       const i = buscarLinea(cx, cy);
-      if (i === null) return estado("No hay ninguna línea ni ancla cerca del clic.");
+      if (i === null) return estado("No hay ninguna línea, ancla ni punto cerca del clic.");
       guardarHistorial();
       ls.splice(i, 1);
       st.sel = null;
       return marcarCambio("Línea eliminada.");
     }
     // modo edición
+    const pt = buscarPunto(cx, cy);
+    if (pt) {
+      guardarHistorial();
+      st.sel = null;
+      st.drag = { tipo: "punto", k: pt[0], c: pt[1], movido: false };
+      actualizarAlturaUI(true);
+      return dibujar();
+    }
     const hit = buscarAncla(cx, cy);
     if (hit) {
       st.sel = hit[0];
@@ -636,6 +735,15 @@ export function iniciarApp(backend) {
     const { ancho: w, alto: h } = st.video;
     let [x, y] = canvasAImgLibre(cx, cy);
     if (d.tipo === "nueva") { d.x1 = r1(clamp(x, 0, w - 1)); return dibujar(); }
+    if (d.tipo === "punto") {                    // un punto se mueve solo en vertical (misma x)
+      const q = paresFrame()[d.k];
+      q[d.c] = r1(clamp(y, 0, h - 1));
+      if (q.y1 > q.y2) { [q.y1, q.y2] = [q.y2, q.y1]; d.c = d.c === "y1" ? "y2" : "y1"; }
+      d.movido = true;
+      st.cursor = canvasAImg(cx, cy);
+      estado(`Par ${d.k + 1}: ${(q.y2 - q.y1).toFixed(1)} px`);
+      return dibujar();
+    }
     const l = lineasFrame()[d.i];
     if (d.tipo === "ancla") {
       const a = l.anclas, j = d.j;
@@ -710,7 +818,7 @@ export function iniciarApp(backend) {
       ArrowUp: () => moverAltura(e.shiftKey ? -0.1 : -1),
       ArrowDown: () => moverAltura(e.shiftKey ? 0.1 : 1),
       Delete: eliminarSeleccionada,
-      Escape: () => cambiarModo(null, true),
+      Escape: () => { if (st.pendiente) { st.pendiente = null; estado(); dibujar(); } else cambiarModo(null, true); },
       "+": () => zoomEn(ZOOM_PASO),
       "=": () => zoomEn(ZOOM_PASO),
       "-": () => zoomEn(1 / ZOOM_PASO),
@@ -802,6 +910,35 @@ export function iniciarApp(backend) {
       texto(`L${p.a + 1}–L${p.b + 1}: ${G.media(p.d).toFixed(1)} px`, px + 6, (pya + pyb) / 2, "#fff", "left");
     }
 
+    // Pares de puntos verticales
+    const pts = st.pares.get(st.frame) || [];
+    const rp = clamp(s * 1.1, 3, 5);
+    const arr = st.drag?.tipo === "punto" ? st.drag.k : -1;
+    pts.forEach((q, k) => {
+      const col = k === arr ? COLOR_PARES_ACTIVO : COLOR_PARES;
+      const [px, p1] = imgACanvas(q.x, q.y1), [, p2] = imgACanvas(q.x, q.y2);
+      ctx.beginPath(); ctx.moveTo(px, p1); ctx.lineTo(px, p2);
+      ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.setLineDash([]); ctx.stroke();
+      ctx.lineWidth = 2;
+      for (const py of [p1, p2]) {
+        ctx.beginPath(); ctx.arc(px, py, rp, 0, 2 * Math.PI); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(px - 2 * rp, py); ctx.lineTo(px + 2 * rp, py); ctx.lineWidth = 1; ctx.stroke(); ctx.lineWidth = 2;
+      }
+      if (s >= 5 || k === arr) texto(`${(q.y2 - q.y1).toFixed(1)}`, px + 2 * rp + 3, (p1 + p2) / 2, col, "left");
+    });
+    if (st.pendiente) {
+      const [px, py] = imgACanvas(st.pendiente.x, st.pendiente.y);
+      ctx.beginPath(); ctx.moveTo(px, Math.max(oy, 0)); ctx.lineTo(px, Math.min(oy + v.alto * s, ch));
+      ctx.strokeStyle = COLOR_PARES_ACTIVO; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(px, py, rp, 0, 2 * Math.PI); ctx.stroke();
+      if (st.cursor) {
+        const [, cy] = imgACanvas(0, st.cursor[1]);
+        ctx.beginPath(); ctx.moveTo(px - 2 * rp, cy); ctx.lineTo(px + 2 * rp, cy); ctx.lineWidth = 1; ctx.stroke();
+        texto(`${Math.abs(st.cursor[1] - st.pendiente.y).toFixed(1)} px`, px + 2 * rp + 3, cy, COLOR_PARES_ACTIVO, "left");
+      }
+    }
+
     const d = st.drag;
     if (d && d.tipo === "nueva") {
       let x0 = 0, x1 = v.ancho - 1;
@@ -833,12 +970,20 @@ export function iniciarApp(backend) {
       const partes = [`Frame ${st.frame}/${v.n_frames - 1}`];
       if (v.fps) partes.push(`t = ${(st.frame / v.fps).toFixed(2)} s`);
       if (st.cargando) partes.push("cargando…");
-      partes.push(`${ls.length} línea${ls.length === 1 ? "" : "s"}`);
+      const pts = st.pares.get(st.frame) || [];
+      if (pts.length) {
+        partes.push(`${pts.length} par${pts.length === 1 ? "" : "es"} de puntos`
+          + (pts.length < MIN_PARES ? ` (faltan ${MIN_PARES - pts.length})` : ""));
+        partes.push(`media ${G.media(pts.map((q) => q.y2 - q.y1)).toFixed(2)} px`);
+      } else partes.push(`${ls.length} línea${ls.length === 1 ? "" : "s"}`);
       for (const p of G.distanciasConsecutivas(ls)) partes.push(`L${p.a + 1}–L${p.b + 1} media ${G.media(p.d).toFixed(2)} px`);
       if (selValida()) { const l = ls[st.sel]; partes.push(`L${st.sel + 1}: altura ${l.altura.toFixed(1)}, ${l.anclas.length} anclas`); }
       if (st.modo === "nueva") partes.push("NUEVA LÍNEA: clic = borde a borde · clic y arrastrar = solo ese tramo");
-      else if (st.modo === "eliminar") partes.push("ELIMINAR: clic en un ancla la quita · clic en la línea la borra");
-      else if (!ls.length) partes.push("pulsa «Nueva línea» para empezar");
+      else if (st.modo === "puntos") partes.push(st.pendiente ? "PUNTOS: clic en el otro borde (misma columna) · Esc cancela"
+        : "PUNTOS: clic en un borde de la arteria");
+      else if (st.modo === "eliminar") partes.push("ELIMINAR: clic en un ancla o punto lo quita · clic en la línea la borra");
+      else if (pts.length) partes.push("arrastra un punto para ajustarlo · «Marcar puntos» para agregar más");
+      else if (!ls.length) partes.push("pulsa «Nueva línea» o «Marcar puntos» para empezar");
       else partes.push("arrastra anclas (curvatura) o la línea (altura) · doble clic: +ancla");
       if (st.cursor) partes.push(`x=${st.cursor[0].toFixed(1)} y=${st.cursor[1].toFixed(1)}`);
       msg = partes.join("   ·   ");

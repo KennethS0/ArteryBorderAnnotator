@@ -36,18 +36,23 @@ export function crearAlmacenLocal() {
       return `frames/${video.id}/bloque_${pad4(b)}.webp`;
     },
 
-    /** Anotaciones guardadas en este navegador para un video: Map(frame -> {lineas}). */
+    /** Anotaciones guardadas en este navegador para un video: Map(frame -> {lineas, pares}). */
     async misAnotaciones(video) {
       const frames = leer().videos[video.id]?.frames || {};
-      return new Map(Object.entries(frames).map(([f, a]) => [Number(f), { lineas: a.lineas }]));
+      return new Map(Object.entries(frames).map(([f, a]) => [Number(f),
+        { lineas: a.lineas || [], pares: a.pares || [] }]));
     },
 
-    async guardar(video, frame, lineas) {
+    /** lineas: [{altura, anclas:[{x, dy}]}]; pares: [{x, y_superior, y_inferior}]. */
+    async guardar(video, frame, lineas, pares = []) {
       const d = leer();
       const v = (d.videos[video.id] ??= { frames: {} });
       Object.assign(v, { nombre: video.nombre, ancho: video.ancho, alto: video.alto,
         n_frames: video.n_frames, fps: video.fps });
-      if (lineas.length) v.frames[frame] = { lineas, actualizado: ahora() };
+      if (lineas.length || pares.length) {
+        v.frames[frame] = { lineas, actualizado: ahora() };
+        if (pares.length) v.frames[frame].pares = pares;
+      }
       else delete v.frames[frame];
       d.modificado = ahora();
       escribir(d);
@@ -70,6 +75,18 @@ export function crearAlmacenLocal() {
       return { frames, videos };
     },
 
+    /** Frames incompletos: con pares de puntos pero menos de `minPares`. */
+    incompletos(minPares) {
+      const out = [];
+      for (const [id, v] of Object.entries(leer().videos)) {
+        for (const [f, a] of Object.entries(v.frames || {})) {
+          const n = (a.pares || []).length;
+          if (n && n < minPares) out.push({ video: id, frame: Number(f), n });
+        }
+      }
+      return out.sort((a, b) => a.video.localeCompare(b.video) || a.frame - b.frame);
+    },
+
     get nombre() { try { return localStorage.getItem(CLAVE_NOMBRE) || ""; } catch { return ""; } },
     set nombre(v) { try { localStorage.setItem(CLAVE_NOMBRE, v); } catch { /* sin almacenamiento */ } },
 
@@ -90,7 +107,8 @@ export function crearAlmacenLocal() {
         herramienta: location.origin + location.pathname,
         convencion: "Frames desde 0. Coordenadas en píxeles de la imagen original (centro del píxel en "
           + "valores enteros, como OpenCV). Cada línea: altura + anclas (x, dy), y_ancla = altura + dy, "
-          + "interpolación PCHIP. Líneas ordenadas de arriba hacia abajo.",
+          + "interpolación PCHIP. Líneas ordenadas de arriba hacia abajo. Pares de puntos: misma x, "
+        + "y_superior < y_inferior, ordenados por x.",
         videos,
       };
     },
@@ -111,8 +129,9 @@ export function crearAlmacenLocal() {
       for (const [id, v] of Object.entries(obj.videos)) {
         const dest = (d.videos[id] ??= { frames: {} });
         for (const [f, a] of Object.entries(v.frames || {})) {
-          if (!Array.isArray(a.lineas)) continue;
-          dest.frames[f] = { lineas: a.lineas, actualizado: a.actualizado || ahora() };
+          if (!Array.isArray(a.lineas) && !Array.isArray(a.pares)) continue;
+          dest.frames[f] = { lineas: a.lineas || [], actualizado: a.actualizado || ahora() };
+          if (Array.isArray(a.pares) && a.pares.length) dest.frames[f].pares = a.pares;
           n++;
         }
         for (const k of ["nombre", "ancho", "alto", "n_frames", "fps"]) if (v[k] !== undefined) dest[k] = v[k];

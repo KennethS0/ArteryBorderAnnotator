@@ -178,3 +178,49 @@ def exportar_frame(frame_bgr, lineas, carpeta, *, video_nombre, ruta_video, fram
     cv2.imwrite(str(carpeta / f"frame_{idx}_anotado.png"), anotada)
     (carpeta / f"frame_{idx}.json").write_text(json.dumps(datos, indent=2, ensure_ascii=False), encoding="utf-8")
     return datos
+
+
+def exportar_frame_pares(frame_bgr, pares, carpeta, *, video_nombre, ruta_video, frame, fps, extra=None):
+    """Igual que exportar_frame, para un frame anotado con pares de puntos verticales.
+
+    pares: [(x, y_superior, y_inferior), ...]. El JSON usa el formato de mediciones de la
+    primera versión de escritorio (punto_superior / punto_inferior / distancia_px), con
+    "formato": "pares_v1".
+    """
+    carpeta = Path(carpeta)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    idx = frame
+    pares = sorted((float(x), float(min(a, b)), float(max(a, b))) for x, a, b in pares)
+    anotada = frame_bgr.copy()
+    S = 16
+    col = (255, 229, 0)
+    mediciones = []
+    for i, (x, ys, yi) in enumerate(pares):
+        p1 = (int(round(x * S)), int(round(ys * S)))
+        p2 = (int(round(x * S)), int(round(yi * S)))
+        cv2.line(anotada, p1, p2, col, 1, cv2.LINE_AA, shift=4)
+        for p in (p1, p2):
+            cv2.circle(anotada, p, 2 * S, col, 1, cv2.LINE_AA, shift=4)
+        mediciones.append({"id": i + 1, "punto_superior": {"x": round(x, 2), "y": round(ys, 2)},
+                           "punto_inferior": {"x": round(x, 2), "y": round(yi, 2)},
+                           "distancia_px": round(yi - ys, 3)})
+    d = np.array([m["distancia_px"] for m in mediciones]) if mediciones else np.array([])
+    h, w = frame_bgr.shape[:2]
+    datos = {
+        "video": video_nombre, "ruta_video": str(ruta_video), "frame": idx,
+        "tiempo_s": round(idx / fps, 4) if fps else None, "fps": fps,
+        "ancho_px": w, "alto_px": h, "unidades": "px", "formato": "pares_v1",
+        "convencion": "Frames desde 0. Coordenadas en píxeles de la imagen original; el centro de "
+                      "cada píxel está en valores enteros (OpenCV). Cada medición: dos puntos en la "
+                      "misma columna x, uno en cada pared; distancia vertical.",
+        "n_mediciones": len(mediciones), "mediciones": mediciones,
+        "distancia_media_px": round(float(d.mean()), 3) if len(d) else None,
+        "distancia_mediana_px": round(float(np.median(d)), 3) if len(d) else None,
+        "exportado": datetime.now().isoformat(timespec="seconds"),
+    }
+    if extra:
+        datos.update(extra)
+    cv2.imwrite(str(carpeta / f"frame_{idx}_original.png"), frame_bgr)
+    cv2.imwrite(str(carpeta / f"frame_{idx}_anotado.png"), anotada)
+    (carpeta / f"frame_{idx}.json").write_text(json.dumps(datos, indent=2, ensure_ascii=False), encoding="utf-8")
+    return datos
