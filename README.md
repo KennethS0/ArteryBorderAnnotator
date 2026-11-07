@@ -155,14 +155,27 @@ El navegador no puede reproducir los `.avi` y tampoco garantiza ubicarse exactam
 frame dado. Por eso `scripts/preparar_frames.py` extrae los frames con OpenCV, en el mismo orden
 que `arteria_braquial.py`, y los guarda en `frames/<video>/` en bloques de 25 frames: imágenes
 WebP **sin pérdida** de 5×5 frames. Los píxeles son idénticos al original (verificado frame por
-frame), y el frame N de la web es el frame N de los otros programas. Son ~330 MB en total.
+frame), y el frame N de la web es el frame N de los otros programas.
+
+| Videos | Origen | Tamaño | Formato |
+|---|---|---|---|
+| `VTS_01_2` … `VTS_01_5` | `.avi` originales | 330×320 | WebP sin pérdida (~80 MB c/u) |
+| `DVD1_VTS_01_1` … `DVD3_VTS_01_5` (15) | `.VOB` de los DVD recortados con `VideosDVD/recortar_vob_a_avi.py` | DVD1: 344×286 · DVD2/DVD3: 374×312 | WebP **calidad 80** (~34 MB c/u) |
+
+Los 15 videos de los DVD van con pérdida porque sin pérdida ocupaban ~180 MB cada uno, y el
+sitio de GitHub Pages no puede pasar de 1 GB. Sus píxeles no son idénticos al `.avi` (PSNR ≈ 40 dB),
+pero el número de frame, el tamaño y las coordenadas sí coinciden. Por eso las anotaciones
+siguen sirviendo directamente sobre el `.avi`.
 
 Para agregar o regenerar un video:
 
 ```bash
-python scripts/preparar_frames.py ../videos/VTS_01_6.avi
+python scripts/preparar_frames.py ../videos/VTS_01_6.avi                  # sin pérdida
+python scripts/preparar_frames.py ../VideosDVD/AVI/DVD1_VTS_01_1.avi --calidad 80   # con pérdida
 git add frames && git commit -m "Agregar VTS_01_6" && git push
 ```
+
+Antes de agregar más videos, revisa el tamaño total de `frames/`. Tiene que quedar por debajo de ~1 GB.
 
 > OpenCV reporta un frame más del que realmente se puede leer en cada video (p. ej. 3744 en
 > lugar de 3743). La web usa el conteo real.

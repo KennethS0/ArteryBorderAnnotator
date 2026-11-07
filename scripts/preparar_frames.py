@@ -12,6 +12,7 @@ así que el frame N de la web es exactamente el frame N de los otros programas.
 Uso (desde la raíz del repositorio):
     python scripts/preparar_frames.py ../videos
     python scripts/preparar_frames.py ../videos/VTS_01_6.avi        # agregar un video
+    python scripts/preparar_frames.py ../AVI --calidad 80           # WebP con pérdida (~5× más pequeño)
 
 Escribe:  frames/<video>/bloque_0000.webp, ...   y   frames/videos.json  (lista de videos)
 Después: git add frames && git commit && git push
@@ -29,7 +30,7 @@ import numpy as np
 RAIZ = Path(__file__).resolve().parent.parent
 
 
-def procesar_video(ruta, carpeta_frames, bloque, columnas):
+def procesar_video(ruta, carpeta_frames, bloque, columnas, calidad=101):
     cap = cv2.VideoCapture(str(ruta))
     if not cap.isOpened():
         raise RuntimeError(f"No se pudo abrir {ruta}")
@@ -48,7 +49,7 @@ def procesar_video(ruta, carpeta_frames, bloque, columnas):
         for k, f in enumerate(frames):
             r, c = divmod(k, columnas)
             hoja[r * alto:(r + 1) * alto, c * ancho:(c + 1) * ancho] = f
-        ok, datos = cv2.imencode(".webp", hoja, [cv2.IMWRITE_WEBP_QUALITY, 101])   # 101 = sin pérdida
+        ok, datos = cv2.imencode(".webp", hoja, [cv2.IMWRITE_WEBP_QUALITY, calidad])   # 101 = sin pérdida
         if not ok:
             raise RuntimeError("OpenCV no pudo codificar WebP")
         (carpeta / f"bloque_{nb:04d}.webp").write_bytes(datos.tobytes())
@@ -74,7 +75,8 @@ def procesar_video(ruta, carpeta_frames, bloque, columnas):
         raise RuntimeError(f"{ruta} no tiene frames legibles")
 
     return {"id": vid, "nombre": ruta.name, "n_frames": n, "fps": fps, "ancho": ancho, "alto": alto,
-            "bloque": bloque, "columnas": columnas, "n_bloques": b, "formato": "webp-lossless"}
+            "bloque": bloque, "columnas": columnas, "n_bloques": b,
+            "formato": "webp-lossless" if calidad > 100 else f"webp-q{calidad}"}
 
 
 def main():
@@ -83,6 +85,8 @@ def main():
     ap.add_argument("--salida", default=str(RAIZ / "frames"), help="carpeta frames/ del sitio (por defecto: la del repo)")
     ap.add_argument("--bloque", type=int, default=25, help="frames por bloque (por defecto: 25)")
     ap.add_argument("--columnas", type=int, default=5, help="columnas de la cuadrícula (por defecto: 5)")
+    ap.add_argument("--calidad", type=int, default=101,
+                    help="calidad WebP: 101 = sin pérdida (por defecto); 1-100 = con pérdida, archivos mucho más pequeños")
     args = ap.parse_args()
 
     rutas = []
@@ -98,7 +102,7 @@ def main():
 
     for ruta in rutas:
         print(f"Procesando {ruta.name}…")
-        meta = procesar_video(ruta, salida, args.bloque, args.columnas)
+        meta = procesar_video(ruta, salida, args.bloque, args.columnas, args.calidad)
         tam = sum(p.stat().st_size for p in (salida / meta["id"]).glob("*.webp"))
         print(f"  {meta['n_frames']} frames, {meta['n_bloques']} bloques, {tam / 1e6:.1f} MB")
         metas[meta["id"]] = meta
