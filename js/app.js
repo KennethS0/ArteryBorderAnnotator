@@ -75,7 +75,7 @@ export function iniciarApp(backend) {
       return estado("Abre un video .avi de tu computadora con «Abrir video…» (o arrástralo a la página).");
     }
     const v = st.videos.find((x) => x.id === h.video) || st.videos[0];
-    $("sel-video").value = v.id;
+    $("sel-video").value = clave(v);
     await abrirVideo(v, h.video === v.id ? h.frame : null);
     if (h.video && h.video !== v.id) {
       estado(`El enlace es del video ${h.video}, que no está en el sitio: ábrelo con «Abrir video…».`);
@@ -86,14 +86,18 @@ export function iniciarApp(backend) {
   // cuando la persona abre ese archivo.
   let pedidoInicial = { video: null, frame: null };
 
+  // Valor del selector: un video del sitio y el mismo video abierto desde la computadora
+  // conviven (mismo id, así comparten anotaciones), pero son dos entradas distintas.
+  const clave = (v) => (v.local ? `local:${v.id}` : v.id);
+
   function llenarSelector() {
     const sel = $("sel-video");
     sel.innerHTML = "";
     for (const v of st.videos) {
-      sel.add(new Option(v.local ? `${v.nombre} (de tu computadora)` : v.nombre || v.id, v.id));
+      sel.add(new Option(v.local ? `${v.nombre} (de tu computadora)` : v.nombre || v.id, clave(v)));
     }
     sel.disabled = !st.videos.length;
-    if (st.video) sel.value = st.video.id;
+    if (st.video) sel.value = clave(st.video);
   }
 
   // ------------------------------------------- abrir un .avi de la computadora
@@ -110,12 +114,14 @@ export function iniciarApp(backend) {
     const id = archivo.name.replace(/\.avi$/i, "");
     const video = { id, nombre: archivo.name, n_frames: info.n_frames, fps: info.fps,
       ancho: info.ancho, alto: info.alto, bloque: 1, columnas: 1, local: true, lector: info };
-    st.videos = [...st.videos.filter((v) => v.id !== id), video].sort((a, b) => a.id.localeCompare(b.id));
+    st.videos = [...st.videos.filter((v) => !(v.local && v.id === id)), video]
+      .sort((a, b) => a.id.localeCompare(b.id) || Number(!!a.local) - Number(!!b.local));
     await guardarTodo();
     llenarSelector();
-    $("sel-video").value = id;
+    $("sel-video").value = clave(video);
     const h = leerHash();
-    const frame = h.video === id ? h.frame : pedidoInicial.video === id ? pedidoInicial.frame : null;
+    const frame = h.video === id ? h.frame : pedidoInicial.video === id ? pedidoInicial.frame
+      : st.video?.id === id ? st.frame : null;
     pedidoInicial = { video: null, frame: null };
     await abrirVideo(video, frame);
     estado(`Abierto ${archivo.name}: ${info.n_frames} frames de ${info.ancho}×${info.alto} (${info.codec}). `
@@ -214,9 +220,9 @@ export function iniciarApp(backend) {
   window.addEventListener("hashchange", async () => {
     if (!st.video) return;
     const h = leerHash();
-    const v = st.videos.find((x) => x.id === h.video);
+    const v = st.video.id === h.video ? st.video : st.videos.find((x) => x.id === h.video);
     if (v && v !== st.video) {
-      $("sel-video").value = v.id;
+      $("sel-video").value = clave(v);
       await abrirVideo(v, h.frame);
     } else if (h.frame !== null) {
       irA(clamp(h.frame, 0, st.video.n_frames - 1));
@@ -225,8 +231,9 @@ export function iniciarApp(backend) {
 
   // ------------------------------------------------------------------ videos
   $("sel-video").onchange = async (e) => {
-    const v = st.videos.find((x) => x.id === e.target.value);
-    if (v && v !== st.video) await abrirVideo(v, null);
+    const v = st.videos.find((x) => clave(x) === e.target.value);
+    // Misma id (versión del sitio ↔ archivo local): se queda en el mismo frame para comparar.
+    if (v && v !== st.video) await abrirVideo(v, st.video?.id === v.id ? st.frame : null);
   };
 
   async function abrirVideo(video, frame) {
