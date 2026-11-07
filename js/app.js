@@ -5,6 +5,7 @@
 
 import * as G from "./geometria.js";
 import { META_FRAMES_POR_VIDEO, AUTOGUARDADO_S, MIN_PARES } from "./config.js";
+import { abrirAviLocal } from "./avi-local.js";
 
 const COLORES = ["#00ff00", "#ff5050", "#50aaff", "#ffd200", "#ff00ff", "#00ffff"];
 const COLOR_PARES = "#00e5ff";       // pares de puntos verticales
@@ -17,6 +18,7 @@ const SEP_MIN_ANCLAS = 0.5;    // px de imagen entre anclas vecinas
 const TRAMO_MIN_PANTALLA = 6;  // arrastre más corto = clic simple (línea de borde a borde)
 const MAX_HISTORIAL = 100;
 const BLOQUES_EN_MEMORIA = 12;
+const FRAMES_LOCALES_EN_MEMORIA = 60;   // video abierto desde la computadora: 1 frame por "bloque"
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
@@ -63,17 +65,79 @@ export function iniciarApp(backend) {
     try {
       st.videos = await backend.listarVideos();
     } catch (e) {
-      return estado(`No se pudo leer la lista de videos: ${e.message || e}`);
+      st.videos = [];
+      estado(`No se pudo leer la lista de videos del sitio: ${e.message || e}`);
     }
+    llenarSelector();
+    const h = leerHash();
+    pedidoInicial = h;
+    if (!st.videos.length) {
+      return estado("Abre un video .avi de tu computadora con «Abrir video…» (o arrástralo a la página).");
+    }
+    const v = st.videos.find((x) => x.id === h.video) || st.videos[0];
+    $("sel-video").value = v.id;
+    await abrirVideo(v, h.video === v.id ? h.frame : null);
+    if (h.video && h.video !== v.id) {
+      estado(`El enlace es del video ${h.video}, que no está en el sitio: ábrelo con «Abrir video…».`);
+    }
+  })();
+
+  // Enlace con el que se abrió la página (#v=…&f=…): si es de un video local, se respeta
+  // cuando la persona abre ese archivo.
+  let pedidoInicial = { video: null, frame: null };
+
+  function llenarSelector() {
     const sel = $("sel-video");
     sel.innerHTML = "";
-    for (const v of st.videos) sel.add(new Option(v.nombre || v.id, v.id));
-    if (!st.videos.length) return estado("Todavía no hay videos. Genera los frames con scripts/preparar_frames.py.");
+    for (const v of st.videos) {
+      sel.add(new Option(v.local ? `${v.nombre} (de tu computadora)` : v.nombre || v.id, v.id));
+    }
+    sel.disabled = !st.videos.length;
+    if (st.video) sel.value = st.video.id;
+  }
+
+  // ------------------------------------------- abrir un .avi de la computadora
+  // El archivo no se sube a ningún lado: se lee frame por frame en este navegador.
+  async function abrirArchivoVideo(archivo) {
+    if (!/\.avi$/i.test(archivo.name)) return estado(`${archivo.name} no es un .avi.`);
+    estado(`Leyendo ${archivo.name}…`);
+    let info;
+    try {
+      info = await abrirAviLocal(archivo, (f) => estado(`Leyendo ${archivo.name}… ${Math.round(f * 100)}%`));
+    } catch (e) {
+      return estado(`No se pudo abrir ${archivo.name}: ${e.message || e}`);
+    }
+    const id = archivo.name.replace(/\.avi$/i, "");
+    const video = { id, nombre: archivo.name, n_frames: info.n_frames, fps: info.fps,
+      ancho: info.ancho, alto: info.alto, bloque: 1, columnas: 1, local: true, lector: info };
+    st.videos = [...st.videos.filter((v) => v.id !== id), video].sort((a, b) => a.id.localeCompare(b.id));
+    await guardarTodo();
+    llenarSelector();
+    $("sel-video").value = id;
     const h = leerHash();
-    const v = st.videos.find((x) => x.id === h.video) || st.videos[0];
-    sel.value = v.id;
-    await abrirVideo(v, h.video === v.id ? h.frame : null);
-  })();
+    const frame = h.video === id ? h.frame : pedidoInicial.video === id ? pedidoInicial.frame : null;
+    pedidoInicial = { video: null, frame: null };
+    await abrirVideo(video, frame);
+    estado(`Abierto ${archivo.name}: ${info.n_frames} frames de ${info.ancho}×${info.alto} (${info.codec}). `
+      + "Se lee desde tu computadora; al recargar la página hay que volver a abrirlo.");
+  }
+
+  $("btn-abrir-video").onclick = () => $("in-video").click();
+  $("in-video").addEventListener("change", async (e) => {
+    const archivo = e.target.files[0];
+    e.target.value = "";
+    if (archivo) await abrirArchivoVideo(archivo);
+  });
+  // Arrastrar un .avi (o un .json de anotaciones) sobre la página.
+  window.addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
+  window.addEventListener("drop", async (e) => {
+    const archivo = e.dataTransfer?.files?.[0];
+    if (!archivo) return;
+    e.preventDefault();
+    if (/\.avi$/i.test(archivo.name)) await abrirArchivoVideo(archivo);
+    else if (/\.json$/i.test(archivo.name)) await cargarAnotaciones(archivo);
+    else estado(`${archivo.name}: arrastra un video .avi o un archivo de anotaciones .json.`);
+  });
 
   // ------------------------------------------------- descargar / cargar archivo
   const dlg = $("dlg-descargar");
@@ -126,7 +190,10 @@ export function iniciarApp(backend) {
   $("in-archivo").addEventListener("change", async (e) => {
     const archivo = e.target.files[0];
     e.target.value = "";
-    if (!archivo) return;
+    if (archivo) await cargarAnotaciones(archivo);
+  });
+
+  async function cargarAnotaciones(archivo) {
     try {
       await guardarTodo();
       const n = backend.importar(JSON.parse(await archivo.text()));
@@ -135,7 +202,7 @@ export function iniciarApp(backend) {
     } catch (err) {
       estado(`No se pudo cargar ${archivo.name}: ${err.message || err}`);
     }
-  });
+  }
 
   function leerHash() {
     const p = new URLSearchParams(location.hash.slice(1));
@@ -205,6 +272,7 @@ export function iniciarApp(backend) {
       return p;
     }
     const p = (async () => {
+      if (video.local) return video.lector.frame(b);      // ImageBitmap leído del .avi local
       const url = await backend.urlBloque(video, b);
       const img = new Image();
       img.decoding = "async";
@@ -214,7 +282,8 @@ export function iniciarApp(backend) {
     })();
     p.catch(() => st.bloques.delete(b));
     st.bloques.set(b, p);
-    while (st.bloques.size > BLOQUES_EN_MEMORIA) st.bloques.delete(st.bloques.keys().next().value);
+    const max = video.local ? FRAMES_LOCALES_EN_MEMORIA : BLOQUES_EN_MEMORIA;
+    while (st.bloques.size > max) st.bloques.delete(st.bloques.keys().next().value);
     return p;
   }
 

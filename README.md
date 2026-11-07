@@ -11,7 +11,8 @@ anota, y al terminar descarga un archivo y lo envía al equipo.
 
 ## Para los anotadores
 
-1. Abre el link y elige un video arriba a la izquierda.
+1. Abre el link y elige un video arriba a la izquierda, o pulsa **Abrir video…** para abrir un
+   `.avi` de tu computadora (también puedes arrastrarlo a la página; no se sube a ningún lado).
 2. Ve al frame que quieras: escríbelo en el cuadro de número + Enter, o usa ◀ ▶ / ← →.
    La meta es unos 25 frames por video.
 3. Anota el frame con líneas, con pares de puntos o con ambos. Con el selector **Líneas | Puntos**
@@ -155,30 +156,40 @@ El navegador no puede reproducir los `.avi` y tampoco garantiza ubicarse exactam
 frame dado. Por eso `scripts/preparar_frames.py` extrae los frames con OpenCV, en el mismo orden
 que `arteria_braquial.py`, y los guarda en `frames/<video>/` en bloques de 25 frames: imágenes
 WebP **sin pérdida** de 5×5 frames. Los píxeles son idénticos al original (verificado frame por
-frame), y el frame N de la web es el frame N de los otros programas.
+frame), y el frame N de la web es el frame N de los otros programas. Son ~330 MB en total, y el
+sitio de GitHub Pages no puede pasar de 1 GB. Por eso los demás videos no se suben: se abren
+desde la computadora (ver abajo).
 
-| Videos | Origen | Tamaño | Formato |
-|---|---|---|---|
-| `VTS_01_2` … `VTS_01_5` | `.avi` originales | 330×320 | WebP sin pérdida (~80 MB c/u) |
-| `DVD1_VTS_01_1` … `DVD3_VTS_01_5` (15) | `.VOB` de los DVD recortados con `VideosDVD/recortar_vob_a_avi.py` | DVD1: 344×286 · DVD2/DVD3: 374×312 | WebP **calidad 80** (~34 MB c/u) |
-
-Los 15 videos de los DVD van con pérdida porque sin pérdida ocupaban ~180 MB cada uno, y el
-sitio de GitHub Pages no puede pasar de 1 GB. Sus píxeles no son idénticos al `.avi` (PSNR ≈ 40 dB),
-pero el número de frame, el tamaño y las coordenadas sí coinciden. Por eso las anotaciones
-siguen sirviendo directamente sobre el `.avi`.
-
-Para agregar o regenerar un video:
+Para agregar o regenerar un video del sitio:
 
 ```bash
-python scripts/preparar_frames.py ../videos/VTS_01_6.avi                  # sin pérdida
-python scripts/preparar_frames.py ../VideosDVD/AVI/DVD1_VTS_01_1.avi --calidad 80   # con pérdida
+python scripts/preparar_frames.py ../videos/VTS_01_6.avi
 git add frames && git commit -m "Agregar VTS_01_6" && git push
 ```
 
-Antes de agregar más videos, revisa el tamaño total de `frames/`. Tiene que quedar por debajo de ~1 GB.
-
 > OpenCV reporta un frame más del que realmente se puede leer en cada video (p. ej. 3744 en
 > lugar de 3743). La web usa el conteo real.
+
+## Videos desde la computadora (sin subirlos)
+
+**Abrir video…** (o arrastrar el archivo a la página) abre un `.avi` local. El archivo **no se
+sube a ningún lado**: `js/avi-local.js` recorre el contenedor AVI, anota dónde está cada frame
+y lee solo el que se pide. Así se puede ir a cualquier frame exacto, sin cargar el video entero
+en memoria. Las anotaciones quedan con el nombre del archivo sin `.avi` (p. ej.
+`DVD1_VTS_01_2`), igual que en los otros programas. Al recargar la página hay que volver a abrir
+el archivo. Un enlace `#v=DVD1_VTS_01_2&f=1500` lleva a ese frame en cuanto se abre el archivo.
+
+| Códec del `.avi` | Píxeles comparados con OpenCV |
+|---|---|
+| PNG (`recortar_vob_a_avi.py --codec png`, ~450 MB por video) | idénticos (diferencia 0) |
+| sin compresión (BI_RGB 24/32 bits) | idénticos (diferencia 0) |
+| MJPEG (`recortar_vob_a_avi.py`, por defecto, ~70 MB por video) | casi iguales: en gris, 0.1 niveles en promedio y 2 como máximo (los decodificadores JPEG redondean distinto) |
+
+El número de frames y la numeración coinciden siempre con OpenCV: los fragmentos de video
+vacíos que escribe ffmpeg se saltan, igual que hace OpenCV. Verificado en Chromium contra
+`cv2.VideoCapture` con los 4 tipos de archivo, incluido un video con 14 fragmentos vacíos.
+Otros códecs (FFV1, H.264…) no se pueden leer: hay que convertirlos con
+`recortar_vob_a_avi.py` o `ffmpeg -i entrada -c:v png -pix_fmt rgb24 salida.avi`.
 
 ## Archivos
 
@@ -189,6 +200,7 @@ Antes de agregar más videos, revisa el tamaño total de `frames/`. Tiene que qu
 | `js/geometria.js` | PCHIP, curvas y distancias: traducción exacta del código Python (verificada con 201 casos, diferencia 0) |
 | `js/almacen-local.js` | respaldo en el navegador, descargar y cargar archivos |
 | `js/config.js` | meta de frames por video |
+| `js/avi-local.js` | lector de `.avi` locales (MJPEG, PNG o sin compresión) |
 | `frames/` | los frames de los videos y `videos.json` |
 | `scripts/preparar_frames.py` | `.avi` → `frames/` |
 | `scripts/importar_anotaciones.py` | archivos recibidos → formato de escritorio + CSV |
