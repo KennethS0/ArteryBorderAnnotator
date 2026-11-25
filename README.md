@@ -161,11 +161,17 @@ frame), y el frame N de la web es el frame N de los otros programas.
 | Videos | Origen | Tamaño | Formato en el sitio |
 |---|---|---|---|
 | `VTS_01_2` … `VTS_01_5` | `.avi` originales | 330×320 | WebP sin pérdida (~80 MB c/u) |
-| `DVD1_VTS_01_1` … `DVD3_VTS_01_5` (15) | `.VOB` de los DVD recortados con `VideosDVD/recortar_vob_a_avi.py` | DVD1: 344×286 · DVD2/DVD3: 374×312 | WebP **calidad 80** (~17–36 MB c/u) |
+| `DVD1_VTS_01_1_1` … `DVD3_VTS_01_5_1` (17 segmentos) | `VideosDVD/AVI_segmentos/`: los `.VOB` de los DVD recortados (`recortar_vob_a_avi.py`) y sin los frames de análisis (`segmentar_videos.py`) | DVD1: 344×286 · DVD2/DVD3: 374×312 | WebP **calidad 80** |
 
-Los 15 videos de los DVD van con pérdida porque sin pérdida ocupaban ~180 MB cada uno, y el
-sitio de GitHub Pages no puede pasar de 1 GB (`frames/` ocupa ~780 MB). Se ven más suaves que el
-`.avi`. Para ver el original, ábrelo con **Abrir video…** (ver abajo). Aparece como una entrada
+Los segmentos de los DVD vienen de `segmentar_videos.py`, que quita los tramos de análisis
+(Doppler espectral), los frames sin imagen y los frames corruptos. Cada tramo válido queda como
+`<video>_<n>`. Por ejemplo, `DVD2_VTS_01_2` (arteria → análisis → arteria) da `DVD2_VTS_01_2_1` y
+`DVD2_VTS_01_2_2`. `VideosDVD/AVI_segmentos/segmentos.csv` dice de qué frames del video original
+sale cada segmento: el frame k del segmento es el frame `frame_inicio + k` del original.
+
+Van con pérdida porque sin pérdida ocupaban ~180 MB cada uno, y el sitio de GitHub Pages no
+puede pasar de 1 GB. Se ven más suaves que el `.avi`. Para ver el original, abre el segmento
+(`AVI_segmentos/<segmento>.avi`) con **Abrir video…** (ver abajo). Aparece como una entrada
 aparte en el selector, «… (de tu computadora)». Comparte las anotaciones con la versión del
 sitio, y al cambiar entre las dos se queda en el mismo frame, para comparar.
 
@@ -173,7 +179,7 @@ Para agregar o regenerar un video del sitio:
 
 ```bash
 python scripts/preparar_frames.py ../videos/VTS_01_6.avi
-python scripts/preparar_frames.py ../VideosDVD/AVI/DVD1_VTS_01_1.avi --calidad 80   # con pérdida
+python scripts/preparar_frames.py ../VideosDVD/AVI_segmentos/DVD1_VTS_01_1_1.avi --calidad 80   # con pérdida
 git add frames && git commit -m "Agregar VTS_01_6" && git push
 ```
 
@@ -188,8 +194,8 @@ Antes de agregar más videos, revisa el tamaño total de `frames/`: debe quedar 
 sube a ningún lado**: `js/avi-local.js` recorre el contenedor AVI, anota dónde está cada frame
 y lee solo el que se pide. Así se puede ir a cualquier frame exacto, sin cargar el video entero
 en memoria. Las anotaciones quedan con el nombre del archivo sin `.avi` (p. ej.
-`DVD1_VTS_01_2`), igual que en los otros programas. Al recargar la página hay que volver a abrir
-el archivo. Un enlace `#v=DVD1_VTS_01_2&f=1500` lleva a ese frame en cuanto se abre el archivo.
+`DVD1_VTS_01_2_1`), igual que en los otros programas. Al recargar la página hay que volver a abrir
+el archivo. Un enlace `#v=DVD1_VTS_01_2_1&f=1500` lleva a ese frame en cuanto se abre el archivo.
 
 | Códec del `.avi` | Píxeles comparados con OpenCV |
 |---|---|
